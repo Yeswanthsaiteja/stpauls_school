@@ -20,23 +20,37 @@ Build a production-ready, multi-tenant **School ERP SaaS Web Application** named
 2. **Staff / Teacher** — limited dashboard, students, academic, communication, CRM
 3. **Parent / Guardian** — child-specific portal (diary, announcements, finance, attendance, results, syllabus, etc.)
 
-## What's Implemented (Feb 2026 — Iteration 2)
-- ✅ **Iter 1 — Core MVP**: Login (gradient hero, role selector, EN/TE), DashboardLayout (collapsible sidebar, banners), Admin/Staff/Parent dashboards, Students+Admission, Academic+Subjects, Finance+donut, Communication, CRM, Employees, Attendance landing, Settings, multi-tenant context with expiry, EN/TE i18n, dark/light theme, Gemini 3 Flash AI insights via FastAPI
-- ✅ **Iter 2 — P1**: Bulk CSV Import (parser + preview + commit), Results Entry (class/subject/exam selector + bulk save with auto-grade A+→F), Student Attendance (P/A/L toggles + WhatsApp absent notify + batch save), Razorpay Settings (config + test payment UI), Admission Form Photo Upload (FileReader preview)
-- ✅ **Iter 2 — P2**: ID Cards (4 printable gradient templates with QR placeholder), Transport (4 routes with stops chain), Hostel (24 rooms with occupancy color-coding), Online Exams (MCQ runner with countdown timer + auto-scoring), GPS Tracking (animated bus on stylized map), Event Gallery (lightbox modal)
+## What's Implemented (Feb 2026 — Iteration 3)
+- ✅ **Iter 1** — Core MVP (Login, Admin/Staff/Parent dashboards, basic modules, AI insights, EN/TE, dark/light)
+- ✅ **Iter 2 — P1/P2** — Bulk Import, Results Entry, Student Attendance, Razorpay, photo upload, ID Cards, Transport, Hostel, Online Exams, GPS Tracking, Event Gallery
+- ✅ **Iter 3 — Deep Modules** (15 new pages, 100% test pass):
+  - **Students**: Directory (grid+table+4 filters), full student profile with 5 tabs (Overview/Academic/Fees/Attendance/Documents), expanded 7-step Admission Form (Personal/Contact/Parent/Admission/Health/Transport+Hostel/Documents), separate Removal page (TC fields + auto-redirect), separate Rejoin page (inactive student list + new class/section assignment + optional new admission number), Certificates (9 types) with editable body + jsPDF letterhead generation
+  - **Academic**: Classes & Sections CRUD (datalist input + class teacher 1/2 + section management + delete protection if students enrolled), Timetable with 3 timing profiles (Nursery/Primary/High) + period grid editor + per-class persistence
+  - **Finance**: Fee Setup (categories × per-class amounts + installments view), Fee Collection (search → form with Cash/Online/Cheque/DD/Razorpay modes → live receipt preview with INR-words → PDF download via jsPDF + auto-increment receipt no.)
+  - **Employees**: Add Employee (full form: identification, role/department, qualification, bank, salary, photo)
+  - **Attendance**: RFID CSV upload (parse, match by admission no., flag unknown, batch commit) + Bulk WhatsApp absent notifications, Leave Management (request + approve/reject workflow)
+  - **ID Cards**: **ID Card Studio** — live editor with 4 colour pickers (header/card/text/accent), 4 presets, font-size slider, vertical/horizontal layouts, front/back side toggle, school logo upload, per-card photo upload, **QR codes (qrcode.react)** auto-generated per person, bulk PDF export via jsPDF
+- ✅ Stack: jsPDF + html2canvas (lazy-loaded), qrcode.react, papaparse (available)
 
-## Backlog (P0/P3)
-**P0 — Production readiness**
+## Backlog
+**P0 — Production**
 - Provide real Firebase config → replaces Demo Mode automatically
-- Firestore Security Rules (`firestore.rules`) + indexes
-- Real password reset via Firebase Auth
-- Move Razorpay key storage to encrypted tenant config; integrate Razorpay Checkout JS
+- Firestore Security Rules + indexes
+- Wire Firestore writes in services (currently demoStore localStorage)
+- Cloud Storage for photos & documents (replace data URLs)
+
+**P1 — Remaining feature depth**
+- Lesson Planning (full editor with approval workflow)
+- Year-End Promotion (bulk promote/hold with archival)
+- Income/Expense Ledger (form + monthly summary charts)
+- Payroll generation with payslip PDF
+- Subjects + Topics manager refresh (current is read-only)
+- Diary, Exam Timetable, Teacher Messaging full screens
 
 **P3 — Polish**
-- Replace native `<input type="date">` with shadcn Calendar for visual consistency
-- Diary, Exam Timetable, Teacher Messaging, Branding settings full implementation
-- Bell-icon notification center backed by Firestore
-- Print stylesheet for ID Cards (hide sidebar/banner)
+- shadcn Calendar in date fields
+- Print stylesheets for ID Cards & receipts
+- Real Razorpay Checkout JS integration
 
 ## Demo Credentials
 - `admin@demo.school` / `demo1234` → SCHOOL_ADMIN

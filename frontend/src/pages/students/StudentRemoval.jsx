@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { Search, AlertTriangle } from 'lucide-react';
 import { demoStore } from '../../services/demoStore';
 import { toast } from 'sonner';
@@ -9,6 +9,7 @@ const REASONS = ['Transfer', 'Family Relocation', 'Fee Default', 'Rustication', 
 
 export default function StudentRemoval() {
   const all = demoStore.list('students').filter((s) => s.status === 'ACTIVE');
+  const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState(null);
   const [form, setForm] = useState({
@@ -34,6 +35,7 @@ export default function StudentRemoval() {
     });
     toast.success(`${picked.fullName} marked Inactive · TC ${form.tcNumber || 'pending'}`);
     setPicked(null); setQ('');
+    setTimeout(() => navigate('/dashboard/students/directory?status=INACTIVE'), 600);
   };
 
   return (

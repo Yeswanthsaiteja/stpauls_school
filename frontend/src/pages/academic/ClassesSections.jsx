@@ -90,10 +90,8 @@ export default function ClassesSections() {
             <div className="space-y-3">
               <div>
                 <label className="label-eyebrow text-muted-foreground">Class Name</label>
-                <select value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-background text-sm" data-testid="cs-name">
-                  <option value="">Select…</option>
-                  {CLASS_OPTIONS.map((c) => <option key={c}>{c}</option>)}
-                </select>
+                <input list="class-suggestions" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. 5th, Pre-KG, XII-Science" className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-background text-sm" data-testid="cs-name" />
+                <datalist id="class-suggestions">{CLASS_OPTIONS.map((c) => <option key={c} value={c} />)}</datalist>
               </div>
               <div>
                 <label className="label-eyebrow text-muted-foreground">Sections (comma separated)</label>
