@@ -39,6 +39,14 @@ import Certificates from './pages/students/Certificates';
 import ClassesSections from './pages/academic/ClassesSections';
 import FeeCollection from './pages/finance/FeeCollection';
 import FeeSetup from './pages/finance/FeeSetup';
+import Ledger from './pages/finance/Ledger';
+import Payroll from './pages/finance/Payroll';
+import LessonPlanning from './pages/academic/LessonPlanning';
+import YearEndPromotion from './pages/academic/YearEndPromotion';
+import SubjectsTopicsCRUD from './pages/academic/SubjectsTopicsCRUD';
+import Diary from './pages/Diary';
+import ExamTimetablePage from './pages/ExamTimetablePage';
+import TeacherMessaging from './pages/TeacherMessaging';
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -114,6 +122,14 @@ function App() {
                   <Route path="students/removal" element={<StudentRemoval />} />
                   <Route path="students/rejoin" element={<StudentRejoin />} />
                   <Route path="students/certificates" element={<Certificates />} />
+                  <Route path="academic/lesson-planning" element={<LessonPlanning />} />
+                  <Route path="academic/promotion" element={<YearEndPromotion />} />
+                  <Route path="academic/subjects" element={<SubjectsTopicsCRUD />} />
+                  <Route path="finance/ledger" element={<Ledger />} />
+                  <Route path="finance/payroll" element={<Payroll />} />
+                  <Route path="diary" element={<Diary />} />
+                  <Route path="exam-timetable" element={<ExamTimetablePage />} />
+                  <Route path="messaging" element={<TeacherMessaging />} />
                 </Route>
               </Route>
               <Route path="*" element={<Navigate to="/login" replace />} />

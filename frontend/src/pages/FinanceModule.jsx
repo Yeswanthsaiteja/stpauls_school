@@ -33,8 +33,8 @@ export default function FinanceModule() {
         {[
           { icon: IndianRupee, label: 'Fee Setup', sub: 'Structures · slabs', color: 'from-indigo-500 to-violet-500', to: '/dashboard/finance/setup' },
           { icon: Wallet, label: 'Fee Collection', sub: 'Receive · receipt', color: 'from-emerald-500 to-teal-500', to: '/dashboard/finance/collect' },
-          { icon: ListChecks, label: 'Ledger', sub: 'Journals · audits', color: 'from-amber-500 to-orange-500', to: '#' },
-          { icon: TrendingUp, label: 'Payroll', sub: 'Staff salaries', color: 'from-rose-500 to-pink-500', to: '#' },
+          { icon: ListChecks, label: 'Ledger', sub: 'Income · expense', color: 'from-amber-500 to-orange-500', to: '/dashboard/finance/ledger' },
+          { icon: TrendingUp, label: 'Payroll', sub: 'Staff payslips', color: 'from-rose-500 to-pink-500', to: '/dashboard/finance/payroll' },
         ].map((c) => (
           <motion.button onClick={() => c.to !== '#' && navigate(c.to)} whileHover={{ y: -5, scale: 1.02 }} key={c.label} className="glass-morphism rounded-[2rem] p-5 text-left" data-testid={`finance-card-${c.label.split(' ').join('-')}`}>
             <div className={`h-11 w-11 rounded-2xl bg-gradient-to-br ${c.color} grid place-items-center text-white`}><c.icon className="h-5 w-5" /></div>

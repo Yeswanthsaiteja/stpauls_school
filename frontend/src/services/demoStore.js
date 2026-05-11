@@ -136,6 +136,27 @@ const seed = {
     { id: 'pr2', tenantId: 'demo', employeeId: 'EMP002', employeeName: 'Arjun Desai', month: '2025-11', basic: 52000, hra: 10400, da: 5200, deductions: 6800, net: 60800, status: 'PAID' },
     { id: 'pr3', tenantId: 'demo', employeeId: 'EMP003', employeeName: 'Pooja Rao', month: '2025-11', basic: 32000, hra: 6400, da: 3200, deductions: 4100, net: 37500, status: 'PENDING' },
   ],
+  lessonPlans: [
+    { id: 'lp1', tenantId: 'demo', title: 'Quadratic Equations Intro', subjectName: 'Mathematics', className: '10th', section: 'A', teacher: 'Meera Krishnan', topic: 'Quadratic Equations', objectives: 'Students will be able to identify and solve simple quadratic equations using factorisation.', method: 'Lecture', materials: 'Whiteboard, textbook ch.4', period: 3, date: '2025-12-08', homework: 'Exercise 4.1 Q1–10', status: 'APPROVED' },
+    { id: 'lp2', tenantId: 'demo', title: 'Cell Division', subjectName: 'Science', className: '10th', section: 'A', teacher: 'Arjun Desai', topic: 'Cell Biology', objectives: 'Understand mitosis vs. meiosis with examples.', method: 'Demo', materials: 'Microscope, slides', period: 5, date: '2025-12-09', homework: 'Diagram practice', status: 'SUBMITTED' },
+    { id: 'lp3', tenantId: 'demo', title: 'Modern India — Independence Movement', subjectName: 'Social Studies', className: '10th', section: 'B', teacher: 'Pooja Rao', topic: 'History', objectives: 'Trace key milestones 1857-1947.', method: 'Discussion', materials: 'Timeline poster', period: 2, date: '2025-12-10', homework: 'Read chapter 6', status: 'DRAFT' },
+  ],
+  examSchedule: [
+    { id: 'es1', tenantId: 'demo', examName: 'Mid-Term', subjectName: 'Mathematics', className: '10th', date: '2026-01-12', startTime: '09:30', durationMin: 180, venue: 'Hall A', maxMarks: 80 },
+    { id: 'es2', tenantId: 'demo', examName: 'Mid-Term', subjectName: 'Science', className: '10th', date: '2026-01-14', startTime: '09:30', durationMin: 180, venue: 'Hall A', maxMarks: 80 },
+    { id: 'es3', tenantId: 'demo', examName: 'Mid-Term', subjectName: 'English', className: '10th', date: '2026-01-16', startTime: '09:30', durationMin: 180, venue: 'Hall B', maxMarks: 80 },
+    { id: 'es4', tenantId: 'demo', examName: 'Mid-Term', subjectName: 'Social Studies', className: '10th', date: '2026-01-18', startTime: '09:30', durationMin: 180, venue: 'Hall B', maxMarks: 80 },
+  ],
+  diaryEntries: [
+    { id: 'd1', tenantId: 'demo', date: '2025-12-04', className: '7th', section: 'A', author: 'Meera Krishnan', note: 'Math HW: Ex 3.2 Q1–8. Bring graph notebook tomorrow.' },
+    { id: 'd2', tenantId: 'demo', date: '2025-12-04', className: '7th', section: 'A', author: 'Arjun Desai', note: 'Science quiz on Light & Reflection on Friday.' },
+    { id: 'd3', tenantId: 'demo', date: '2025-12-03', className: '7th', section: 'A', author: 'Pooja Rao', note: 'PTM rescheduled to Dec 18, 10 AM.' },
+  ],
+  messages: [
+    { id: 'm1', tenantId: 'demo', from: 'parent@demo.school', fromName: 'Priya Iyer', to: 'admin@demo.school', toName: 'Asha Reddy', message: 'Could we reschedule the math doubt session?', read: false, timestamp: '2025-12-04T09:21:00Z' },
+    { id: 'm2', tenantId: 'demo', from: 'admin@demo.school', fromName: 'Asha Reddy', to: 'parent@demo.school', toName: 'Priya Iyer', message: 'Yes, how about Friday 4 PM?', read: true, timestamp: '2025-12-04T09:45:00Z' },
+    { id: 'm3', tenantId: 'demo', from: 'parent@demo.school', fromName: 'Priya Iyer', to: 'admin@demo.school', toName: 'Asha Reddy', message: 'Perfect, thank you!', read: false, timestamp: '2025-12-04T10:02:00Z' },
+  ],
 };
 
 const STORAGE_KEY = 'benita_demo_store_v1';

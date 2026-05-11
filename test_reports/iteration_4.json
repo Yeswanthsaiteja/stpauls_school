@@ -1,0 +1,86 @@
+{
+  "summary": "Iteration 4 frontend regression at https://7bf1a137-2088-48b1-b00c-f71e85d1e26a.preview.emergentagent.com. Firebase keys are wired and banner-firebase is no longer rendered. Demo Mode auth (admin/staff/parent @demo.school / demo1234) still works as designed. All 8 new pages load and key data-testids resolve: LessonPlanning (lp-new + filters + modal save-draft persists a new lessonPlans row), YearEndPromotion (yp-class/section/commit/export present; banner UI shows; BUT see CRITICAL bug below — 0 rows for all classes 5th–10th), SubjectsTopicsCRUD (st-add-subject + st-subj-sub1..sub4 + st-edit/del + st-add-topic + st-topic-t1..t3 + st-status-t1..t3 wired), Ledger (8 recharts SVGs render — bar + pie; ledger-row-* table joins INCOME txs + EXPENSE rows; ledger-add-expense modal exposes exp-date/category/desc/amount/save; ledger-export wired), Payroll (payroll-generate creates pr-row-*/pr-status-*/pr-payslip-* per employee; pr-status toggle PENDING→PAID verified; pr-payslip downloaded 'Payslip_EMP003_2025-12.pdf' ✓), Diary (diary-new modal with date/class/section/note/post fields; for parent role diary-new is correctly hidden), ExamTimetable (et-add modal with examName/subjectName/className/date/save; et-del-es1..es4 render; et-add correctly hidden for parent), TeacherMessaging (tm-search filters contacts; tm-input + tm-send posts a new message — verified 'TEST hello' bubble appeared; unread badge visible for parent contact). Academic landing has 6 acad-card-* tiles; Finance landing has 4 finance-card-* tiles. Iter1/2/3 regressions: admin login + dashboard + AI insights load + students directory + admission/removal/rejoin + certificates + ID Card Studio + RFID + Leave Management — all still load without errors.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "YearEndPromotion (/dashboard/academic/promotion)",
+        "issue": "CRITICAL DATA-INCONSISTENCY: 0 student rows rendered for every class option (Nursery..12th) because the page filters by CLASS_OPTIONS values ('1st','2nd','...','10th','11th','12th') but seeded students in /app/frontend/src/services/demoStore.js line 9-13 use Roman-numeral classNames ('X', 'IX', 'VIII', 'XII', 'VII'). Result: yp-hold-*/yp-reason-* never render, commit shows 'No students to promote' toast, and the spec verification ('Aanya Iyer 7th → 8th if not held') cannot be exercised. Either normalise seed students to '10th'/'9th'/'8th'/'12th'/'7th', or map Roman ↔ Arabic in the filter and NEXT_CLASS map.",
+        "selector": "[data-testid=\"yp-row-*\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "ExamTimetablePage (parent role)",
+        "issue": "Parent (parent@demo.school, child Aanya Iyer className='VII') sees 'No exams scheduled' because demo exams es1–es4 are seeded with className='10th' while the student record uses 'VII'. Same root cause as the Promotion bug — Roman-vs-Arabic class-name mismatch. Admin view shows the 4 rows correctly; parent view is silent due to filter.",
+        "selector": "[data-testid=\"et-row-*\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Payroll (/dashboard/finance/payroll)",
+        "issue": "After clicking payroll-generate, console emits 'Encountered two children with the same key' warning AND the pr-row-* / pr-status-* / pr-payslip-* triplets render duplicated for the same payroll record (e.g. pr-row-payroll-1778525011840 appears twice). Idempotency contract per the spec ('idempotent per month') is violated: re-running generate appears to push duplicate records into demoStore rather than upserting on (employeeId, monthKey). Suggest dedupe in payroll-generate handler and use a stable key (`${empId}-${month}`) for the rendered list.",
+        "selector": "[data-testid^=\"pr-row-\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "SubjectsTopicsCRUD (/dashboard/academic/subjects)",
+        "issue": "React hydration warning: <button> nested inside <button>. The outer st-subj-sub1 is a <motion.button> and it contains st-edit-subj-sub1 and st-del-subj-sub1 <button> elements. Browsers will auto-close the outer button on hydration. Refactor outer container to <div role='button' tabIndex={0}> + onKeyDown, or move the edit/del buttons outside the clickable card.",
+        "selector": "[data-testid=\"st-subj-sub1\"]",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "LessonPlanning modal",
+        "issue": "Missing data-testids for fields explicitly listed in the review spec: lp-objectives, lp-method, lp-date, lp-period (LessonPlanning.jsx lines 121–125). The inputs/selects/textareas exist but cannot be targeted by the spec's listed test-ids. lp-title, lp-subject, lp-teacher, lp-class, lp-section, lp-save-draft, lp-submit are present.",
+        "selector": "[data-testid=\"lp-objectives\"], [data-testid=\"lp-method\"], [data-testid=\"lp-date\"], [data-testid=\"lp-period\"]",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Year-End Promotion commit (NEXT_CLASS map)",
+        "issue": "NEXT_CLASS only maps Arabic ordinals ('1st'→'2nd', …, '10th'→'11th'). Even if students were filtered correctly, students stored as 'X' would never find a next-class mapping. Promotion will silently no-op on existing seed data.",
+        "affected_selectors": ["[data-testid=\"yp-commit\"]"]
+      },
+      {
+        "flow": "Parent Diary auto-filter to child's class",
+        "issue": "Parent's child Aanya Iyer has className='VII' but diary entries d1/d2/d3 are seeded with className='7th'. If/when the parent auto-filter to child's class is enabled, the parent will see an empty diary — same Roman/Arabic mismatch."
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "Recharts containers",
+        "issues": ["First mount of any chart emits 'width(-1) and height(-1) of chart should be greater than 0' warning. Cosmetic; charts do render after layout completes. Consider wrapping with explicit width/height or min dimensions."]
+      },
+      {
+        "screen": "Firebase init",
+        "issues": ["Firestore prints 'Could not reach Cloud Firestore backend' error in console — expected per the design (app silently falls back to demoStore), but the message is verbose. Consider silencing via a try/catch + console.debug or initializing Firestore in offline-only mode when in demo fallback."]
+      }
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "HIGH — Normalise class-name schema across seeds in /app/frontend/src/services/demoStore.js. Either (a) convert all students to Arabic-ordinal ('10th','9th','8th','12th','7th') OR (b) convert lesson plans, exam schedule, diary entries, fee setup to match the student classNames. Pick ONE convention. Currently the app has two parallel schemas which silently breaks Year-End Promotion (admin) and Exam Timetable + Diary (parent role).",
+    "HIGH — Fix Payroll generate idempotency: de-duplicate by (employeeId, monthKey) before pushing; use that composite key as the React render key to silence the duplicate-key warning.",
+    "MEDIUM — Refactor SubjectsTopicsCRUD card so the outer clickable is a <div role='button'> and edit/delete are sibling/overlay buttons, eliminating the nested-button hydration warning.",
+    "MEDIUM — Add data-testid to lp-objectives, lp-method, lp-date, lp-period inputs in LessonPlanning.jsx — they are listed in the review spec but missing from the component.",
+    "LOW — Wrap recharts containers with explicit min-height to silence layout warnings on first paint.",
+    "LOW — Silence Firestore offline error in console when DEMO fallback is active (try/catch around getDoc with console.debug)."
+  ],
+  "critical_code_review_comments": [
+    "Major schema inconsistency in /app/frontend/src/services/demoStore.js: students seeded with Roman-numeral classes while every other entity (lessonPlans, examSchedule, diaryEntries, subjects partially) uses Arabic ordinals — silently breaks two role-aware flows. Must standardise.",
+    "Payroll component pushes new records each call to generate() without checking for existing (empId, month) pair — violates idempotency contract documented in the review spec.",
+    "SubjectsTopicsCRUD couples the subject-row click target and the per-row CRUD buttons as nested <button> — HTML-invalid; React warns on hydration; iOS Safari will close outer button on touchstart making the CRUD buttons unclickable in some cases.",
+    "Firestore initialisation is loud — emits an unhandled error to console on every page load when the project has no data. AuthContext/TenantContext fall back as expected, so the connection should be either deferred (init lazily on first write) or wrapped to log at debug level.",
+    "Good: data-testid coverage on Ledger/Payroll/Diary/ExamTimetable/Messaging/Subjects is uniformly excellent. PDF pipeline (jspdf+html2canvas lazy load) works for both Certificates (iter3) and Payslip (this iter). Recharts integration renders without runtime errors."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "n/a — frontend-only iteration",
+    "frontend": "78% — 6/8 new pages fully functional (Lesson Planning, Subjects, Ledger, Diary, Exam Timetable admin, Messaging). 2/8 have functional code paths blocked by seed-data inconsistency (Promotion shows 0 rows; Parent Exam Timetable shows 0 rows). Payroll generates but with duplicate-row regression."
+  },
+  "test_credentials": "admin@demo.school / demo1234 (✓), staff@demo.school / demo1234 (not retested this iter), parent@demo.school / demo1234 (✓ — verified diary-new/et-add hidden, messaging works). Updated /app/memory/test_credentials.md is still empty; main agent should populate it for future agents.",
+  "seed_data_creation": "During testing, localStorage demoStore mutated: 1 new lessonPlan (DRAFT, 'TEST Lesson'), 1 new payroll batch (3 records, month 2025-12, one toggled to PAID), 1 new message ('TEST hello' to parent@demo.school). YearEnd Promotion commit was attempted but no-op'd because rows=0. All wiped on next localStorage.clear() at test start.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reproduce the class-name mismatch: open /dashboard/academic/promotion → yp-class dropdown → no class option from Nursery through 12th yields any yp-row-*. Confirm via DevTools: demoStore.list('students') returns objects with className in {'X','IX','VIII','XII','VII'}, while YearEndPromotion.jsx filters with CLASS_OPTIONS = ['Nursery','LKG','UKG','1st'..'12th']. Fix the seed (preferred: convert students to '10th','9th','8th','12th','7th') OR convert downstream consumers (exam/diary/lesson plans) to Roman. After fix, verify (1) admin promotion commit moves Aanya Iyer 7th→8th, (2) parent /dashboard/exam-timetable shows 4 rows for 7th, (3) parent /dashboard/diary shows the seeded entries d1/d2/d3. Also verify Payroll idempotency by clicking payroll-generate twice on the same month and confirming the row count does NOT double.",
+  "rca of the issue": "Root cause for Promotion 0-rows + Parent ExamTimetable empty: Two parallel class-name conventions in demoStore.js seed: students use Roman numerals (line 9-13: 'X','IX','VIII','XII','VII'), while lessonPlans (line 140-142), examSchedule (145-148), diaryEntries (151+), and YearEndPromotion's CLASS_OPTIONS/NEXT_CLASS map use Arabic ordinals ('10th','9th',etc). String equality comparison ('X' === '10th') fails → empty filter result → empty UI tables. The fix is one-line per affected student: change 'X' → '10th', 'IX' → '9th', 'VIII' → '8th', 'XII' → '12th', 'VII' → '7th'. Root cause for Payroll duplicate keys: payroll generation appends new objects with Date.now() ids without an existence check on (employeeId, monthKey), so each click of payroll-generate adds another set of N employee records; React then warns on duplicate keys when the same employee appears twice. Fix: in handleGenerate, filter out existing records for the selected month before push, or use upsert keyed by `${empId}-${monthKey}`."
+}

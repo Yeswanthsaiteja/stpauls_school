@@ -4,6 +4,9 @@ import { Routes, Route, useNavigate, NavLink, Outlet } from 'react-router-dom';
 import OnlineExams from './OnlineExams';
 import GPSTracking from './GPSTracking';
 import EventGallery from './EventGallery';
+import Diary from './Diary';
+import ExamTimetable from './ExamTimetablePage';
+import TeacherMessaging from './TeacherMessaging';
 import {
   BookOpen, Bell, IndianRupee, ClipboardCheck, FileText, Library,
   Calendar, MessageSquare, MapPin, Gamepad2, Phone, Camera,
@@ -285,9 +288,9 @@ export default function ParentDashboard() {
       <Route path="syllabus" element={<Syllabus />} />
       <Route path="attendance" element={<Attendance />} />
       <Route path="finance" element={<Finance />} />
-      <Route path="diary" element={<Stub title="Diary" />} />
-      <Route path="exam-timetable" element={<Stub title="Exam Timetable" />} />
-      <Route path="messaging" element={<Stub title="Teacher Messaging" />} />
+      <Route path="diary" element={<Diary />} />
+      <Route path="exam-timetable" element={<ExamTimetable />} />
+      <Route path="messaging" element={<TeacherMessaging />} />
       <Route path="gps" element={<GPSTracking />} />
       <Route path="online-exams" element={<OnlineExams />} />
       <Route path="gallery" element={<EventGallery />} />
