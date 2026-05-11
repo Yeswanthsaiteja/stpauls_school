@@ -47,9 +47,10 @@ export default function BulkImport() {
 
   const commit = () => {
     let n = 0;
-    rows.forEach((r) => {
+    rows.forEach((r, idx) => {
       const adm = newAdmissionNo();
       demoStore.add('students', {
+        id: `stu-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
         ...r,
         fullName: `${r.firstName || ''} ${r.lastName || ''}`.trim(),
         admissionNo: adm,

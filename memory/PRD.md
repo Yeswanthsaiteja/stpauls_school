@@ -20,45 +20,23 @@ Build a production-ready, multi-tenant **School ERP SaaS Web Application** named
 2. **Staff / Teacher** — limited dashboard, students, academic, communication, CRM
 3. **Parent / Guardian** — child-specific portal (diary, announcements, finance, attendance, results, syllabus, etc.)
 
-## What's Implemented (Feb 2026)
-- ✅ Login page with animated gradient hero, role visual selector, EN/TE toggle, demo auto-fill
-- ✅ DashboardLayout (collapsible sidebar, top navbar, banners, subscription expired overlay)
-- ✅ Admin Dashboard — 5 stat cards, revenue area chart, recent activity, AI Insights via Gemini 3 Flash, communication log card
-- ✅ Staff Dashboard — 4 stats + reminders + activity + notifications
-- ✅ Parent Dashboard — student banner, progress, 10 module tiles + Announcements / Results / Syllabus / Attendance / Finance sub-pages
-- ✅ Students Module — landing + Admission Form (5-step wizard) + Directory + recent admissions table + bulk-import scaffold
-- ✅ Academic Module — landing + Subjects/Topics with progress
-- ✅ Finance Module — module cards + category donut chart + transactions + WhatsApp fee reminders + Razorpay placeholder
-- ✅ Employees Module — presence matrix + roster
-- ✅ Attendance Module — landing + 7-day engagement bar chart
-- ✅ Communication Center — Announcements list + compose
-- ✅ CRM Panel — stats by status, filters, status updater, new-ticket modal
-- ✅ Settings — profile, tenant info, theme/lang toggles, change password
-- ✅ Multi-tenant context with subscription expiry banner (≤30d) + full lockout overlay (expired)
-- ✅ i18n EN + TE
-- ✅ Dark/Light theme persisted to localStorage
-- ✅ Backend `/api/ai/insights` (Gemini 3 Flash via Emergent Universal LLM Key)
+## What's Implemented (Feb 2026 — Iteration 2)
+- ✅ **Iter 1 — Core MVP**: Login (gradient hero, role selector, EN/TE), DashboardLayout (collapsible sidebar, banners), Admin/Staff/Parent dashboards, Students+Admission, Academic+Subjects, Finance+donut, Communication, CRM, Employees, Attendance landing, Settings, multi-tenant context with expiry, EN/TE i18n, dark/light theme, Gemini 3 Flash AI insights via FastAPI
+- ✅ **Iter 2 — P1**: Bulk CSV Import (parser + preview + commit), Results Entry (class/subject/exam selector + bulk save with auto-grade A+→F), Student Attendance (P/A/L toggles + WhatsApp absent notify + batch save), Razorpay Settings (config + test payment UI), Admission Form Photo Upload (FileReader preview)
+- ✅ **Iter 2 — P2**: ID Cards (4 printable gradient templates with QR placeholder), Transport (4 routes with stops chain), Hostel (24 rooms with occupancy color-coding), Online Exams (MCQ runner with countdown timer + auto-scoring), GPS Tracking (animated bus on stylized map), Event Gallery (lightbox modal)
 
-## Backlog (P0/P1/P2)
-**P0**
-- Wire real Firebase config (user provides `firebase-applet-config.json`) — replaces Demo Mode automatically
+## Backlog (P0/P3)
+**P0 — Production readiness**
+- Provide real Firebase config → replaces Demo Mode automatically
 - Firestore Security Rules (`firestore.rules`) + indexes
 - Real password reset via Firebase Auth
+- Move Razorpay key storage to encrypted tenant config; integrate Razorpay Checkout JS
 
-**P1**
-- Bulk CSV student import (parser + Firestore batch write)
-- Results Entry table with bulk save
-- Student Attendance daily marker (P/A/L) with WhatsApp absent notification
-- Razorpay live integration
-- Photo upload to Firebase Storage (Admission Form step 5 + tenant logo)
-
-**P2**
-- ID Cards (printable templates)
-- Transport (route + bus tracking)
-- Hostel (rooms + occupancy)
-- Online Exams MCQ runner + GPS Tracking map
-- Event Gallery lightbox
+**P3 — Polish**
+- Replace native `<input type="date">` with shadcn Calendar for visual consistency
+- Diary, Exam Timetable, Teacher Messaging, Branding settings full implementation
 - Bell-icon notification center backed by Firestore
+- Print stylesheet for ID Cards (hide sidebar/banner)
 
 ## Demo Credentials
 - `admin@demo.school` / `demo1234` → SCHOOL_ADMIN

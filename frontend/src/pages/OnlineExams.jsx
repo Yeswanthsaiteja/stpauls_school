@@ -77,8 +77,10 @@ function ExamRunner({ exam, onClose }) {
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="glass-morphism rounded-[2rem] p-8 text-center max-w-lg mx-auto" data-testid="exam-result">
         <div className="h-16 w-16 mx-auto rounded-3xl bg-emerald-500/10 grid place-items-center"><Trophy className="h-8 w-8 text-emerald-500" /></div>
         <div className="font-display font-black text-3xl tracking-tighter mt-4">Exam Submitted</div>
-        <div className="mt-4 font-display font-black text-6xl tracking-tighter text-emerald-500">{score}<span className="text-3xl text-muted-foreground">/{exam.totalMarks}</span></div>
-        <div className="label-eyebrow text-muted-foreground mt-1">{pct}% · {Object.keys(answers).length} answered</div>
+        <div className="mt-4 font-display font-black text-6xl tracking-tighter text-emerald-500">
+          {score}<span className="text-3xl text-muted-foreground">/{exam.totalMarks}</span>
+        </div>
+        <div className="label-eyebrow text-muted-foreground mt-2">{pct}% · {Object.keys(answers).length} answered</div>
         <button onClick={onClose} className="mt-6 h-11 px-5 rounded-2xl bg-primary text-primary-foreground label-eyebrow">Back to Exams</button>
       </motion.div>
     );
