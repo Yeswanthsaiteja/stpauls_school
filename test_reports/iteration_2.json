@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 2 – P1+P2 features verified end-to-end via Playwright on the public preview URL. All 14 requested flows pass. Admin: BulkImport (use-sample → 3 rows preview → commit toasts), ResultsEntry (class/section/subject/exam/total selectors render; mark input + auto-grade + results-save-btn toasts), StudentAttendance (date/class/section selectors, mark-all, P/A/L per student, WhatsApp Notify link appears for ABSENT, att-save batches), IDCards (all 4 templates indigo/emerald/rose/slate switchable, 8 student selectors, print btn), Transport (routes rendered), Hostel (room cards render), Razorpay (rzp-save flips to Connected badge, rzp-test enabled — disabled attr=None after save). Parent: parent-module-gallery is the 11th tile and navigates to /dashboard/parent-dashboard/gallery (6 unsplash photos, lightbox open/close works), OnlineExams (2 cards, start-exam-ex1 → exam-runner with countdown timer + 4 options + exam-opt-q1-0 selectable; exam-next advances; exam-submit shows exam-result like '10/30 33% · 3 answered'), GPSTracking (ETA + Route content rendered). Admission Step 5 reached via 4 Next clicks: adm-photo-input present, accept=image/*, 'Submit Admission' button visible.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "BulkImport / Students list", "issues": ["After loading sample CSV and committing, React logs duplicate key warning 'Encountered two children with the same key, students-1778503074420' repeatedly. The 3 sample rows are likely assigned ids using a single Date.now() snapshot or hard-coded ids that collide if commit is invoked more than once or coexist with seeded ids. Fix: in BulkImport.jsx, generate per-row unique ids (e.g. `students-${Date.now()}-${i}-${Math.random().toString(36).slice(2,6)}`) before demoStore.add."]},
+      {"screen": "Admission Form Step 1 (Personal) — Date of Birth", "issues": ["Uses browser's native <input type='date'> (mm/dd/yyyy) instead of the shadcn Calendar/Popover component used elsewhere. Not blocking but inconsistent with the design system."]},
+      {"screen": "Demo Mode banner", "issues": ["Banner persists on every authenticated page (expected in demo) — verify production build hides it when Firebase keys are present."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_backend_api.py (from iter 1 – backend not retested per request)"
+  ],
+  "action_items": [
+    "BulkImport.jsx: ensure each sample/imported row gets a globally unique id to silence React 'duplicate key students-…' warnings observed in console after commit.",
+    "(Optional, P3) Replace native date input on Admission Step 1 DOB with shadcn Calendar for visual consistency."
+  ],
+  "critical_code_review_comments": [
+    "BulkImport sample rows appear to share an id derived from a single Date.now() call → causes React reconciliation warnings. Use per-row unique id generator.",
+    "ExamRunner: timer + countdown working but exam-result text is concatenated without spaces ('Exam Submitted10/3033% · 3 answered') – consider adding margin/whitespace between heading, score, and meta for readability.",
+    "RazorpaySettings: 'rzp-test' uses `disabled` attribute that is removed entirely (null) after save — correct behaviour, but consider an aria-disabled fallback for screen-readers.",
+    "ID Cards print button triggers window.print – verify print stylesheet hides sidebar/banner (manual verification recommended, not part of automated test).",
+    "All new pages correctly use data-testid for interactive elements – good test coverage discipline."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (not retested, prior iter pass)", "frontend": "100% (14/14 flows)"},
+  "test_credentials": "admin@demo.school / demo1234 and parent@demo.school / demo1234 — both work via DEMO_USERS (Demo Mode, no Firebase).",
+  "seed_data_creation": "None new. demoStore already seeds 4 transport routes, 24 hostel rooms, 2 exams (with MCQs), and 6 gallery photos as designed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Tested at https://benita-erp-demo.preview.emergentagent.com. All P1+P2 routes verified: /dashboard/bulk-import, /results-entry, /student-attendance, /id-cards, /transport, /hostel, /razorpay, /parent-dashboard/online-exams, /parent-dashboard/gps, /parent-dashboard/gallery. Admission step 5 reachable after 4 adm-next-btn clicks. Backend untouched – test_backend_api.py from iter 1 still valid. Watch out for the React duplicate-key warning if you re-run BulkImport multiple times in same session.",
+  "rca of the issue": "Only one minor non-blocking React console warning detected: BulkImport sample rows share a key 'students-1778503074420'. RCA: ids are generated once when sample is loaded and then reused; reproducing → /dashboard/bulk-import → click 'or load sample data' → click 'Commit X rows' → React DevTools shows duplicate-key warnings as those rows are added to demoStore that may already contain an entry with the same fabricated id. Mitigation: change BulkImport.jsx parseCSV/loadSample to attach `id: \\`stu-${Date.now()}-${index}-${Math.random().toString(36).slice(2,6)}\\`` per row. No functional impact – import still succeeds and toast shows."
+}

@@ -1,0 +1,133 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Benita ERP design tokens */
+  --accent-color: #6366f1;
+  --bg-color: #fefefe;
+  --card-color: rgba(255, 255, 255, 0.7);
+  --border-color: rgba(0, 0, 0, 0.06);
+  --warning: #fbbf24;
+  --tenant-primary: #6366f1;
+
+  /* shadcn tokens */
+  --background: 0 0% 99%;
+  --foreground: 230 30% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 230 30% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 230 30% 12%;
+  --primary: 239 84% 67%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 230 25% 96%;
+  --secondary-foreground: 230 30% 12%;
+  --muted: 230 25% 96%;
+  --muted-foreground: 230 10% 45%;
+  --accent: 230 25% 96%;
+  --accent-foreground: 230 30% 12%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 230 15% 92%;
+  --input: 230 15% 92%;
+  --ring: 239 84% 67%;
+  --chart-1: 239 84% 67%;
+  --chart-2: 161 79% 46%;
+  --chart-3: 37 96% 56%;
+  --chart-4: 327 79% 65%;
+  --chart-5: 199 89% 56%;
+  --radius: 1rem;
+}
+
+.dark {
+  --accent-color: #a5b4fc;
+  --bg-color: #0c0e14;
+  --card-color: rgba(18, 22, 33, 0.8);
+  --border-color: rgba(255, 255, 255, 0.05);
+  --tenant-primary: #a5b4fc;
+
+  --background: 230 35% 5%;
+  --foreground: 230 15% 92%;
+  --card: 230 30% 8%;
+  --card-foreground: 230 15% 92%;
+  --popover: 230 30% 8%;
+  --popover-foreground: 230 15% 92%;
+  --primary: 233 91% 80%;
+  --primary-foreground: 230 35% 8%;
+  --secondary: 230 20% 14%;
+  --secondary-foreground: 230 15% 92%;
+  --muted: 230 20% 14%;
+  --muted-foreground: 230 10% 65%;
+  --accent: 230 20% 14%;
+  --accent-foreground: 230 15% 92%;
+  --destructive: 0 62% 45%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 230 15% 18%;
+  --input: 230 15% 18%;
+  --ring: 233 91% 80%;
+}
+
+* { border-color: hsl(var(--border)); }
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-feature-settings: "ss01", "cv11";
+}
+
+.font-display { font-family: 'Outfit', 'Inter', sans-serif; letter-spacing: -0.02em; }
+
+/* Glassmorphism */
+.glass-morphism {
+  background: var(--card-color);
+  border: 1px solid var(--border-color);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 8px 32px -16px rgba(0, 0, 0, 0.08);
+}
+.dark .glass-morphism {
+  box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.5);
+}
+
+/* Grid background */
+.grid-bg {
+  background-image:
+    linear-gradient(to right, var(--border-color) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border-color) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.grid-bg-dots {
+  background-image: radial-gradient(circle, var(--border-color) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* No scrollbar */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Custom scrollbar (thin) */
+.thin-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.thin-scrollbar::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 999px; }
+
+/* Selection */
+::selection { background: hsl(var(--primary) / 0.25); color: hsl(var(--foreground)); }
+
+/* Tiny label utility */
+.label-eyebrow { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.18em; }
+
+/* Soft glow */
+.glow-blob {
+  filter: blur(120px);
+  opacity: 0.55;
+  pointer-events: none;
+}
