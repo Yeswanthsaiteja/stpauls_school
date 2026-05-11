@@ -1,15 +1,23 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import { Plus } from 'lucide-react';
 import { demoStore } from '../services/demoStore';
 
 const cardColor = (i) => ['from-indigo-500 to-violet-500','from-emerald-500 to-teal-500','from-amber-500 to-orange-500','from-rose-500 to-pink-500','from-cyan-500 to-blue-500'][i % 5];
 
 export default function EmployeesModule() {
   const list = demoStore.list('employees');
+  const navigate = useNavigate();
   const onDuty = list.filter((e) => e.status === 'ACTIVE').length;
   return (
     <div className="space-y-6" data-testid="employees-module">
-      <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tighter uppercase">Human Capital</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tighter uppercase">Human Capital</h1>
+        <button onClick={() => navigate('/dashboard/employees/add')} className="h-10 px-4 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center gap-2" data-testid="emp-add-btn">
+          <Plus className="h-3.5 w-3.5" />Add Employee
+        </button>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { l: 'Deployed', v: onDuty, c: 'text-emerald-500' },

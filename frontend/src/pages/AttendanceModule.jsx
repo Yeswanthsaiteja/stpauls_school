@@ -8,9 +8,9 @@ export default function AttendanceModule() {
   const navigate = useNavigate();
   const data = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d, i) => ({ day: d, present: 86 + Math.round(Math.cos(i)*4 + Math.random()*6), absent: 6 + Math.round(Math.random()*4) }));
   const cards = [
-    { icon: CalendarCheck, label: 'Student Attendance', sub: 'Daily P/A/L', color: 'from-indigo-500 to-violet-500', to: '/dashboard/student-attendance' },
-    { icon: UserCog, label: 'Staff Presence', sub: 'Bio-metric · manual', color: 'from-emerald-500 to-teal-500', to: '#' },
-    { icon: BedDouble, label: 'Leave Management', sub: 'Apply · approve', color: 'from-amber-500 to-orange-500', to: '#' },
+    { icon: CalendarCheck, label: 'Student Attendance (Manual)', sub: 'Daily P/A/L', color: 'from-indigo-500 to-violet-500', to: '/dashboard/student-attendance' },
+    { icon: UserCog, label: 'RFID Upload', sub: 'CSV bulk + WhatsApp', color: 'from-fuchsia-500 to-purple-500', to: '/dashboard/rfid-attendance' },
+    { icon: BedDouble, label: 'Leave Management', sub: 'Apply · approve', color: 'from-amber-500 to-orange-500', to: '/dashboard/leave-management' },
   ];
   return (
     <div className="space-y-6" data-testid="attendance-module">

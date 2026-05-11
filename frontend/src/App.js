@@ -22,10 +22,23 @@ import AccountSettings from './pages/AccountSettings';
 import BulkImport from './pages/BulkImport';
 import ResultsEntry from './pages/ResultsEntry';
 import StudentAttendance from './pages/StudentAttendance';
-import IDCards from './pages/IDCards';
+import IDCardStudio from './pages/IDCardStudio';
 import Transport from './pages/Transport';
 import Hostel from './pages/Hostel';
 import RazorpaySettings from './pages/RazorpaySettings';
+import Timetable from './pages/Timetable';
+import RfidAttendance from './pages/RfidAttendance';
+import LeaveManagement from './pages/LeaveManagement';
+import EmployeeAdd from './pages/EmployeeAdd';
+import StudentDirectoryPage from './pages/students/StudentDirectoryPage';
+import StudentProfile from './pages/students/StudentProfile';
+import AdmissionFormFull from './pages/students/AdmissionFormFull';
+import StudentRemoval from './pages/students/StudentRemoval';
+import StudentRejoin from './pages/students/StudentRejoin';
+import Certificates from './pages/students/Certificates';
+import ClassesSections from './pages/academic/ClassesSections';
+import FeeCollection from './pages/finance/FeeCollection';
+import FeeSetup from './pages/finance/FeeSetup';
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -80,13 +93,27 @@ function App() {
                   <Route path="crm" element={<CRMPanel />} />
                   <Route path="settings" element={<AccountSettings />} />
                   <Route path="branding" element={<Stub title="Branding" />} />
-                  <Route path="id-cards" element={<IDCards />} />
+                  <Route path="id-cards" element={<IDCardStudio />} />
                   <Route path="transport" element={<Transport />} />
                   <Route path="hostel" element={<Hostel />} />
                   <Route path="razorpay" element={<RazorpaySettings />} />
                   <Route path="results-entry" element={<ResultsEntry />} />
                   <Route path="student-attendance" element={<StudentAttendance />} />
+                  <Route path="rfid-attendance" element={<RfidAttendance />} />
+                  <Route path="leave-management" element={<LeaveManagement />} />
                   <Route path="bulk-import" element={<BulkImport />} />
+                  <Route path="timetable" element={<Timetable />} />
+                  <Route path="employees/add" element={<EmployeeAdd />} />
+                  <Route path="academic/classes" element={<ClassesSections />} />
+                  <Route path="finance/setup" element={<FeeSetup />} />
+                  <Route path="finance/collect/:studentId" element={<FeeCollection />} />
+                  <Route path="finance/collect" element={<FeeCollection />} />
+                  <Route path="students/directory" element={<StudentDirectoryPage />} />
+                  <Route path="students/profile/:id" element={<StudentProfile />} />
+                  <Route path="students/admission-full" element={<AdmissionFormFull />} />
+                  <Route path="students/removal" element={<StudentRemoval />} />
+                  <Route path="students/rejoin" element={<StudentRejoin />} />
+                  <Route path="students/certificates" element={<Certificates />} />
                 </Route>
               </Route>
               <Route path="*" element={<Navigate to="/login" replace />} />

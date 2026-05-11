@@ -15,9 +15,9 @@ const Card = ({ icon: Icon, label, sub, color, onClick, testId }) => (
 function Landing() {
   const nav = useNavigate();
   const cards = [
-    { icon: BookOpen, label: 'Classes & Sections', sub: '12 grades · 32 sections', color: 'bg-gradient-to-br from-indigo-500 to-violet-500', to: '#' },
+    { icon: BookOpen, label: 'Classes & Sections', sub: '12 grades · 32 sections', color: 'bg-gradient-to-br from-indigo-500 to-violet-500', to: '/dashboard/academic/classes' },
     { icon: BookMarked, label: 'Subject Topics', sub: 'Track curriculum', color: 'bg-gradient-to-br from-emerald-500 to-teal-500', to: 'subjects' },
-    { icon: Calendar, label: 'Timetable', sub: 'Weekly slots', color: 'bg-gradient-to-br from-amber-500 to-orange-500', to: '#' },
+    { icon: Calendar, label: 'Timetable', sub: 'Weekly slots', color: 'bg-gradient-to-br from-amber-500 to-orange-500', to: '/dashboard/timetable' },
     { icon: FileText, label: 'Results Entry', sub: 'Mark sheets', color: 'bg-gradient-to-br from-rose-500 to-pink-500', to: '/dashboard/results-entry' },
     { icon: Lightbulb, label: 'Lesson Planning', sub: 'AI assisted', color: 'bg-gradient-to-br from-cyan-500 to-blue-500', to: '#' },
     { icon: ArrowUpCircle, label: 'Promotions', sub: 'Year-end transitions', color: 'bg-gradient-to-br from-fuchsia-500 to-purple-500', to: '#' },

@@ -101,6 +101,41 @@ const seed = {
     { id: 'g5', tenantId: 'demo', eventName: 'Art Festival', caption: 'Student Exhibition', photoURL: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=900&q=80' },
     { id: 'g6', tenantId: 'demo', eventName: 'Field Trip', caption: 'Botanical Gardens', photoURL: 'https://images.unsplash.com/photo-1466692476868-aef1dfb1e735?w=900&q=80' },
   ],
+  classes: [
+    { id: 'c1', tenantId: 'demo', name: 'Nursery', sections: ['A'], teacher1: 'Meera Krishnan', teacher2: '' },
+    { id: 'c2', tenantId: 'demo', name: 'LKG', sections: ['A', 'B'], teacher1: 'Pooja Rao', teacher2: '' },
+    { id: 'c3', tenantId: 'demo', name: 'UKG', sections: ['A', 'B'], teacher1: 'Arjun Desai', teacher2: '' },
+    { id: 'c4', tenantId: 'demo', name: '1st', sections: ['A', 'B'], teacher1: 'Meera Krishnan', teacher2: '' },
+    { id: 'c5', tenantId: 'demo', name: '5th', sections: ['A', 'B', 'C'], teacher1: 'Arjun Desai', teacher2: 'Pooja Rao' },
+    { id: 'c6', tenantId: 'demo', name: '10th', sections: ['A', 'B'], teacher1: 'Meera Krishnan', teacher2: 'Arjun Desai' },
+  ],
+  feeCategories: [
+    { id: 'fc1', tenantId: 'demo', name: 'Tuition Fee', type: 'recurring', amounts: { 'Nursery': 12000, 'LKG': 14000, 'UKG': 15000, '1st': 18000, '5th': 24000, '10th': 32000 } },
+    { id: 'fc2', tenantId: 'demo', name: 'Admission Fee', type: 'one-time', amounts: { 'Nursery': 5000, 'LKG': 5000, 'UKG': 6000, '1st': 8000, '5th': 10000, '10th': 12000 } },
+    { id: 'fc3', tenantId: 'demo', name: 'Exam Fee', type: 'recurring', amounts: { 'Nursery': 1000, 'LKG': 1500, 'UKG': 1500, '1st': 2000, '5th': 2500, '10th': 3500 } },
+    { id: 'fc4', tenantId: 'demo', name: 'Transport Fee', type: 'recurring', amounts: { 'default': 8000 } },
+    { id: 'fc5', tenantId: 'demo', name: 'Library Fee', type: 'recurring', amounts: { 'default': 500 } },
+  ],
+  feeInstallments: [
+    { id: 'fi1', tenantId: 'demo', name: 'Term 1', dueDate: '2025-06-15', percentage: 40 },
+    { id: 'fi2', tenantId: 'demo', name: 'Term 2', dueDate: '2025-10-15', percentage: 30 },
+    { id: 'fi3', tenantId: 'demo', name: 'Term 3', dueDate: '2026-01-15', percentage: 30 },
+  ],
+  expenses: [
+    { id: 'ex1', tenantId: 'demo', date: '2025-11-02', category: 'Utilities', description: 'Electricity bill', amount: 38500, paidBy: 'Accountant' },
+    { id: 'ex2', tenantId: 'demo', date: '2025-11-05', category: 'Maintenance', description: 'AC servicing', amount: 12000, paidBy: 'Admin' },
+    { id: 'ex3', tenantId: 'demo', date: '2025-11-09', category: 'Supplies', description: 'Stationery for office', amount: 6500, paidBy: 'Accountant' },
+    { id: 'ex4', tenantId: 'demo', date: '2025-11-12', category: 'Events', description: 'Annual Day decorations', amount: 24000, paidBy: 'Admin' },
+  ],
+  leaveRequests: [
+    { id: 'lr1', tenantId: 'demo', employeeId: 'EMP002', employeeName: 'Arjun Desai', type: 'Casual', startDate: '2025-12-01', endDate: '2025-12-02', reason: 'Personal work', status: 'PENDING' },
+    { id: 'lr2', tenantId: 'demo', employeeId: 'EMP001', employeeName: 'Meera Krishnan', type: 'Sick', startDate: '2025-11-20', endDate: '2025-11-20', reason: 'Fever', status: 'APPROVED' },
+  ],
+  payroll: [
+    { id: 'pr1', tenantId: 'demo', employeeId: 'EMP001', employeeName: 'Meera Krishnan', month: '2025-11', basic: 45000, hra: 9000, da: 4500, deductions: 5200, net: 53300, status: 'PAID' },
+    { id: 'pr2', tenantId: 'demo', employeeId: 'EMP002', employeeName: 'Arjun Desai', month: '2025-11', basic: 52000, hra: 10400, da: 5200, deductions: 6800, net: 60800, status: 'PAID' },
+    { id: 'pr3', tenantId: 'demo', employeeId: 'EMP003', employeeName: 'Pooja Rao', month: '2025-11', basic: 32000, hra: 6400, da: 3200, deductions: 4100, net: 37500, status: 'PENDING' },
+  ],
 };
 
 const STORAGE_KEY = 'benita_demo_store_v1';

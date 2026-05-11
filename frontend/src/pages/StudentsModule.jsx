@@ -13,22 +13,27 @@ function Landing() {
   const navigate = useNavigate();
   const recents = demoStore.list('students').slice(0, 5);
   const cards = [
-    { icon: Users, label: 'Student Directory', sub: 'Browse · search · filter', to: 'directory', color: 'from-indigo-500 to-violet-500' },
-    { icon: FilePlus2, label: 'Admission Form', sub: 'Multi-step wizard', to: 'admission', color: 'from-emerald-500 to-teal-500' },
-    { icon: UserMinus2, label: 'Removal / Rejoin', sub: 'Status updates', to: 'manage', color: 'from-amber-500 to-orange-500' },
-    { icon: Award, label: 'Certificates', sub: 'TC, Bonafide etc.', to: 'certificates', color: 'from-rose-500 to-pink-500' },
+    { icon: Users, label: 'Student Directory', sub: 'Browse · search · filter', to: '/dashboard/students/directory', color: 'from-indigo-500 to-violet-500' },
+    { icon: FilePlus2, label: 'Admission Form', sub: 'Multi-step wizard', to: '/dashboard/students/admission-full', color: 'from-emerald-500 to-teal-500' },
+    { icon: UserMinus2, label: 'Student Removal', sub: 'TC + deactivation', to: '/dashboard/students/removal', color: 'from-amber-500 to-orange-500' },
+    { icon: Award, label: 'Certificates', sub: 'TC · Bonafide · more', to: '/dashboard/students/certificates', color: 'from-rose-500 to-pink-500' },
   ];
   return (
     <div className="space-y-6" data-testid="students-module">
       <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tighter uppercase">Students</h1>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((c, i) => (
-          <motion.button key={c.to} onClick={() => navigate(c.to)} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} whileHover={{ y: -5, scale: 1.02 }} className="glass-morphism rounded-[2rem] p-5 text-left" data-testid={`students-card-${c.to}`}>
+          <motion.button key={c.to} onClick={() => navigate(c.to)} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} whileHover={{ y: -5, scale: 1.02 }} className="glass-morphism rounded-[2rem] p-5 text-left" data-testid={`students-card-${c.label.split(' ').join('-')}`}>
             <div className={`h-11 w-11 rounded-2xl bg-gradient-to-br ${c.color} grid place-items-center text-white`}><c.icon className="h-5 w-5" /></div>
             <div className="mt-4 font-bold">{c.label}</div>
             <div className="label-eyebrow text-muted-foreground mt-1">{c.sub}</div>
           </motion.button>
         ))}
+        <motion.button onClick={() => navigate('/dashboard/students/rejoin')} whileHover={{ y: -5, scale: 1.02 }} className="glass-morphism rounded-[2rem] p-5 text-left" data-testid="students-card-Rejoin">
+          <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-500 grid place-items-center text-white"><Users className="h-5 w-5" /></div>
+          <div className="mt-4 font-bold">Student Rejoin</div>
+          <div className="label-eyebrow text-muted-foreground mt-1">Reactivate alumni</div>
+        </motion.button>
       </div>
 
       <div className="glass-morphism rounded-[2rem] p-5">

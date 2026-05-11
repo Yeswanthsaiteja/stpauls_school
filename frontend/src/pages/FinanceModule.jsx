@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { TrendingUp, TrendingDown, IndianRupee, Wallet, ListChecks, MessageCircle } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { useNavigate } from 'react-router-dom';
 import { demoStore } from '../services/demoStore';
 import { formatCurrency, getWhatsAppUrl } from '../lib/utils';
 
@@ -10,6 +11,7 @@ const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899'];
 export default function FinanceModule() {
   const tx = demoStore.list('transactions');
   const paid = tx.filter((x) => x.status === 'PAID').reduce((s, x) => s + x.amount, 0);
+  const navigate = useNavigate();
   const pieData = [
     { name: 'Tuition', value: 480000 },
     { name: 'Transport', value: 120000 },
@@ -29,16 +31,16 @@ export default function FinanceModule() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { icon: IndianRupee, label: 'Fee Setup', sub: 'Structures · slabs', color: 'from-indigo-500 to-violet-500' },
-          { icon: Wallet, label: 'Fee Collection', sub: 'Receive · receipt', color: 'from-emerald-500 to-teal-500' },
-          { icon: ListChecks, label: 'Ledger', sub: 'Journals · audits', color: 'from-amber-500 to-orange-500' },
-          { icon: TrendingUp, label: 'Payroll', sub: 'Staff salaries', color: 'from-rose-500 to-pink-500' },
+          { icon: IndianRupee, label: 'Fee Setup', sub: 'Structures · slabs', color: 'from-indigo-500 to-violet-500', to: '/dashboard/finance/setup' },
+          { icon: Wallet, label: 'Fee Collection', sub: 'Receive · receipt', color: 'from-emerald-500 to-teal-500', to: '/dashboard/finance/collect' },
+          { icon: ListChecks, label: 'Ledger', sub: 'Journals · audits', color: 'from-amber-500 to-orange-500', to: '#' },
+          { icon: TrendingUp, label: 'Payroll', sub: 'Staff salaries', color: 'from-rose-500 to-pink-500', to: '#' },
         ].map((c) => (
-          <motion.div whileHover={{ y: -5, scale: 1.02 }} key={c.label} className="glass-morphism rounded-[2rem] p-5">
+          <motion.button onClick={() => c.to !== '#' && navigate(c.to)} whileHover={{ y: -5, scale: 1.02 }} key={c.label} className="glass-morphism rounded-[2rem] p-5 text-left" data-testid={`finance-card-${c.label.split(' ').join('-')}`}>
             <div className={`h-11 w-11 rounded-2xl bg-gradient-to-br ${c.color} grid place-items-center text-white`}><c.icon className="h-5 w-5" /></div>
             <div className="mt-4 font-bold">{c.label}</div>
             <div className="label-eyebrow text-muted-foreground mt-1">{c.sub}</div>
-          </motion.div>
+          </motion.button>
         ))}
       </div>
 
