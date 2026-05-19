@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   GraduationCap, LayoutDashboard, Users, BookOpen, IndianRupee, UserSquare2,
   CalendarCheck, MegaphoneIcon, Headset, IdCard, Bus, Hotel, Settings,
-  Sun, Moon, LogOut, Menu, X, Bell, Search, ChevronLeft, Globe, AlertTriangle, Palette,
+  Sun, Moon, LogOut, Menu, X, Bell, Search, ChevronLeft, Globe, AlertTriangle,
+  FileText, CheckSquare, MessageSquare, Check,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -12,6 +13,7 @@ import { useTenant } from '../contexts/TenantContext';
 import { useTranslation } from 'react-i18next';
 import { isFirebaseConfigured } from '../lib/firebase';
 import { cn } from '../lib/utils';
+import { subscribeNotifications, markAllNotificationsRead, markNotificationRead } from '../services/firebase/notificationsService';
 
 const ROLE_NAV = {
   ADMIN: [
@@ -29,25 +31,127 @@ const ROLE_NAV = {
     { to: '/dashboard/settings', icon: Settings, key: 'settings' },
   ],
   STAFF: [
-    { to: '/dashboard/staff-dashboard', icon: LayoutDashboard, key: 'dashboard' },
-    { to: '/dashboard/students', icon: Users, key: 'students' },
-    { to: '/dashboard/academic', icon: BookOpen, key: 'academic' },
-    { to: '/dashboard/communication', icon: MegaphoneIcon, key: 'communication' },
-    { to: '/dashboard/crm', icon: Headset, key: 'crm' },
-    { to: '/dashboard/settings', icon: Settings, key: 'settings' },
+    { to: '/dashboard/staff-dashboard',            icon: LayoutDashboard, key: 'dashboard',   end: true },
+    { to: '/dashboard/staff-dashboard/my-class',   icon: Users,           key: 'myClass' },
+    { to: '/dashboard/staff-dashboard/attendance', icon: CalendarCheck,   key: 'attendance' },
+    { to: '/dashboard/staff-dashboard/marks',      icon: BookOpen,        key: 'marks' },
+    { to: '/dashboard/staff-dashboard/topics',     icon: CheckSquare,     key: 'topics' },
+    { to: '/dashboard/staff-dashboard/leave',      icon: FileText,        key: 'leave' },
+    { to: '/dashboard/staff-dashboard/messages',   icon: MessageSquare,   key: 'messages' },
+    { to: '/dashboard/settings',                   icon: Settings,        key: 'settings' },
   ],
   PARENT: [
     { to: '/dashboard/parent-dashboard', icon: LayoutDashboard, key: 'dashboard' },
-    { to: '/dashboard/branding', icon: Palette, key: 'branding' },
+    { to: '/dashboard/parent-dashboard/attendance', icon: CalendarCheck, key: 'attendance' },
+    { to: '/dashboard/parent-dashboard/finance', icon: IndianRupee, key: 'finance' },
+    { to: '/dashboard/parent-dashboard/result', icon: BookOpen, key: 'results' },
+    { to: '/dashboard/parent-dashboard/support', icon: Headset, key: 'support' },
+    { to: '/dashboard/parent-dashboard/messages', icon: MegaphoneIcon, key: 'messages' },
     { to: '/dashboard/settings', icon: Settings, key: 'settings' },
   ],
 };
 
+const STAFF_ROLES = new Set([
+  'staff', 'teacher', 'class teacher', 'principal', 'vice principal',
+  'accountant', 'librarian', 'lab assistant', 'administrative', 'support staff',
+]);
+
 const roleKey = (role) => {
-  if (role === 'STAFF' || role === 'TEACHER') return 'STAFF';
-  if (role === 'PARENT') return 'PARENT';
+  if (!role) return 'ADMIN';
+  const r = role.toLowerCase().trim();
+  if (r === 'school_admin' || r === 'admin') return 'ADMIN';
+  if (r === 'parent') return 'PARENT';
+  if (STAFF_ROLES.has(r)) return 'STAFF';
   return 'ADMIN';
 };
+
+// Notification type → icon colour
+const NOTE_COLOURS = {
+  leave_request: 'bg-amber-500/10 text-amber-600',
+  leave_status:  'bg-emerald-500/10 text-emerald-600',
+  message:       'bg-blue-500/10 text-blue-600',
+  announcement:  'bg-violet-500/10 text-violet-600',
+};
+
+function NotificationDropdown({ notifications, userId, onClose }) {
+  const unread = notifications.filter(n => !n.read);
+
+  const handleMarkAll = async () => {
+    await markAllNotificationsRead(userId);
+  };
+
+  const handleMark = async (n) => {
+    if (!n.read) await markNotificationRead(n.id);
+  };
+
+  const relativeTime = (n) => {
+    const sec = n.createdAt?.seconds;
+    if (!sec) return '';
+    const diff = Math.floor((Date.now() / 1000) - sec);
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -8, scale: 0.95 }}
+      transition={{ duration: 0.15 }}
+      className="absolute right-0 top-12 w-80 bg-card border border-border rounded-[1.5rem] shadow-2xl z-50 overflow-hidden"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <span className="font-bold text-sm">Notifications</span>
+        <div className="flex items-center gap-2">
+          {unread.length > 0 && (
+            <button onClick={handleMarkAll} className="label-eyebrow text-primary text-[10px] hover:underline">
+              Mark all read
+            </button>
+          )}
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-muted">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* List */}
+      <div className="overflow-y-auto max-h-80 divide-y divide-border">
+        {notifications.length === 0 && (
+          <div className="text-center text-sm text-muted-foreground py-8">No notifications yet</div>
+        )}
+        {notifications.slice(0, 20).map((n) => (
+          <div
+            key={n.id}
+            onClick={() => handleMark(n)}
+            className={cn(
+              'flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-muted/50',
+              !n.read && 'bg-primary/5'
+            )}
+          >
+            <div className={cn('h-8 w-8 rounded-xl grid place-items-center flex-shrink-0 mt-0.5', NOTE_COLOURS[n.type] || 'bg-muted text-muted-foreground')}>
+              {n.type === 'leave_request' && <FileText className="h-3.5 w-3.5" />}
+              {n.type === 'leave_status'  && <Check className="h-3.5 w-3.5" />}
+              {n.type === 'message'       && <MessageSquare className="h-3.5 w-3.5" />}
+              {n.type === 'announcement'  && <Bell className="h-3.5 w-3.5" />}
+              {!['leave_request','leave_status','message','announcement'].includes(n.type) && <Bell className="h-3.5 w-3.5" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-sm font-bold truncate">{n.title}</span>
+                {!n.read && <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0" />}
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.body}</p>
+              <span className="label-eyebrow text-muted-foreground mt-1 block">{relativeTime(n)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
 
 export default function DashboardLayout() {
   const { profile, signOut } = useAuth();
@@ -57,8 +161,38 @@ export default function DashboardLayout() {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [bellOpen, setBellOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const bellRef = useRef(null);
 
   const items = useMemo(() => ROLE_NAV[roleKey(profile?.role)] || [], [profile]);
+
+  // Determine current user's notification userId
+  const notifUserId = useMemo(() => {
+    if (!profile) return null;
+    const role = (profile.role || '').toLowerCase();
+    if (role === 'school_admin' || role === 'admin') return 'admin';
+    return profile.employeeId || null; // Firestore employee doc ID
+  }, [profile]);
+
+  // Real-time notification subscription
+  useEffect(() => {
+    if (!notifUserId) return;
+    const unsub = subscribeNotifications(notifUserId, setNotifications);
+    return unsub;
+  }, [notifUserId]);
+
+  // Close bell dropdown when clicking outside
+  useEffect(() => {
+    if (!bellOpen) return;
+    const handler = (e) => {
+      if (bellRef.current && !bellRef.current.contains(e.target)) setBellOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [bellOpen]);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   const handleSignOut = async () => {
     await signOut();
@@ -77,7 +211,7 @@ export default function DashboardLayout() {
         </div>
         {!collapsed && (
           <div className="leading-tight">
-            <div className="font-display font-black text-base tracking-tight">{tenant?.name || 'Benita ERP'}</div>
+            <div className="font-display font-black text-base tracking-tight">{tenant?.name || "St. Paul's High School"}</div>
             <div className="label-eyebrow text-muted-foreground">{t('appSub')}</div>
           </div>
         )}
@@ -92,7 +226,7 @@ export default function DashboardLayout() {
           <NavLink
             key={it.to}
             to={it.to}
-            end={it.to === '/dashboard' || it.to === '/dashboard/staff-dashboard' || it.to === '/dashboard/parent-dashboard'}
+            end={it.end || it.to === '/dashboard' || it.to === '/dashboard/parent-dashboard'}
             data-testid={`nav-${it.key}`}
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
@@ -193,7 +327,7 @@ export default function DashboardLayout() {
               </button>
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/60">
                 <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="label-eyebrow text-muted-foreground">{tenant?.name || 'School'}</span>
+                <span className="label-eyebrow text-muted-foreground">{tenant?.name || "St. Paul's High School"}</span>
               </div>
             </div>
 
@@ -209,10 +343,37 @@ export default function DashboardLayout() {
                 <Search className="h-3.5 w-3.5 text-muted-foreground" />
                 <input data-testid="topbar-search" placeholder={t('search')} className="bg-transparent outline-none text-sm flex-1" />
               </div>
-              <button data-testid="bell-btn" className="relative p-2 rounded-xl hover:bg-muted">
-                <Bell className="h-[18px] w-[18px]" />
-                <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
-              </button>
+
+              {/* Bell with notification dropdown */}
+              <div className="relative" ref={bellRef}>
+                <button
+                  data-testid="bell-btn"
+                  onClick={() => setBellOpen(v => !v)}
+                  className="relative p-2 rounded-xl hover:bg-muted transition-colors"
+                >
+                  <Bell className="h-[18px] w-[18px]" />
+                  {unreadCount > 0 && (
+                    <motion.span
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="absolute -top-0.5 -right-0.5 h-5 w-5 rounded-full bg-rose-500 text-white text-[9px] font-black grid place-items-center border-2 border-background"
+                    >
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </motion.span>
+                  )}
+                </button>
+
+                <AnimatePresence>
+                  {bellOpen && (
+                    <NotificationDropdown
+                      notifications={notifications}
+                      userId={notifUserId}
+                      onClose={() => setBellOpen(false)}
+                    />
+                  )}
+                </AnimatePresence>
+              </div>
+
               <div className="hidden sm:block h-6 w-px bg-border mx-1" />
               <div className="flex items-center gap-2.5">
                 <div className="hidden sm:block leading-tight text-right">

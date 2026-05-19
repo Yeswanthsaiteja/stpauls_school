@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import { Printer, Upload, Download } from 'lucide-react';
-import { demoStore } from '../services/demoStore';
+
 import { useTenant } from '../contexts/TenantContext';
 import { downloadElementAsPDF } from '../lib/pdfUtils';
 import { toast } from 'sonner';
@@ -15,8 +15,9 @@ const PRESETS = [
 ];
 
 export default function IDCardStudio() {
-  const students = demoStore.list('students');
-  const employees = demoStore.list('employees');
+  const [students, setStudents] = React.useState([]);
+  React.useEffect(() => { import('../services/firebase/studentsService').then(m => m.listStudents({ status: 'ACTIVE' }).then(setStudents)); }, []);
+  const [employees, setEmployees] = React.useState([]); React.useEffect(() => { import('../services/firebase/employeesService').then(m => m.listEmployees().then(setEmployees)); }, []);
   const { tenant } = useTenant();
   const [mode, setMode] = useState('student'); // student | staff
   const [layout, setLayout] = useState('vertical');

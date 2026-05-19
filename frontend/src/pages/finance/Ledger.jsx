@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { NavLink } from 'react-router-dom';
-import { TrendingUp, TrendingDown, Plus, X, FileDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Plus, X, FileDown, RefreshCw } from 'lucide-react';
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
-import { demoStore } from '../../services/demoStore';
+import { listTransactions, listExpenses, addExpense as addExpenseFS } from '../../services/firebase/financeService';
 import { formatCurrency, exportToCSV } from '../../lib/utils';
 import { toast } from 'sonner';
 
@@ -11,20 +11,32 @@ const CATEGORIES = ['Rent', 'Utilities', 'Maintenance', 'Salaries', 'Supplies', 
 const PIE_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#94a3b8'];
 
 export default function Ledger() {
-  const [expenses, setExpenses] = useState(demoStore.list('expenses'));
+  const [expenses, setExpenses] = useState([]);
+  const [txs, setTxs] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), category: 'Utilities', description: '', amount: 0, paidBy: 'Accountant' });
 
-  const txs = demoStore.list('transactions').filter((t) => t.status === 'PAID');
-  const refresh = () => setExpenses(demoStore.list('expenses'));
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [txData, expData] = await Promise.all([listTransactions(), listExpenses()]);
+    setTxs(txData.filter((t) => t.status === 'PAID'));
+    setExpenses(expData);
+    setLoading(false);
+  }, []);
 
-  const addExpense = () => {
+  useEffect(() => { load(); }, [load]);
+
+  const addExpenseHandler = async () => {
     if (!form.description) return toast.error('Description required');
-    demoStore.add('expenses', { ...form, amount: Number(form.amount) });
-    refresh();
+    setSaving(true);
+    const row = await addExpenseFS({ ...form, amount: Number(form.amount) });
+    setExpenses((e) => [row, ...e]);
     setOpen(false);
     setForm({ date: new Date().toISOString().slice(0, 10), category: 'Utilities', description: '', amount: 0, paidBy: 'Accountant' });
-    toast.success('Expense added');
+    toast.success('Expense saved to Firestore');
+    setSaving(false);
   };
 
   const incomeTotal = txs.reduce((s, t) => s + t.amount, 0);
@@ -62,6 +74,9 @@ export default function Ledger() {
           <h1 className="font-display font-black text-3xl tracking-tighter uppercase mt-2">Ledger</h1>
         </div>
         <div className="flex gap-2">
+          <button onClick={load} className="h-10 w-10 rounded-2xl bg-muted grid place-items-center" title="Refresh">
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
           <button onClick={exportLedger} className="h-10 px-4 rounded-2xl bg-muted hover:bg-muted/80 label-eyebrow flex items-center gap-2" data-testid="ledger-export"><FileDown className="h-3.5 w-3.5" />Export</button>
           <button onClick={() => setOpen(true)} className="h-10 px-4 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center gap-2" data-testid="ledger-add-expense"><Plus className="h-3.5 w-3.5" />Add Expense</button>
         </div>
@@ -76,8 +91,8 @@ export default function Ledger() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="glass-morphism rounded-[2rem] p-5">
           <div className="label-eyebrow text-muted-foreground mb-4">Monthly Income vs Expense</div>
-          <div className="h-[260px]">
-            <ResponsiveContainer width="100%" height="100%">
+          <div style={{ width: '100%', height: 260, minHeight: 260 }}>
+            <ResponsiveContainer width="100%" height={260}>
               <BarChart data={monthlyData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                 <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
@@ -91,8 +106,8 @@ export default function Ledger() {
         </div>
         <div className="glass-morphism rounded-[2rem] p-5">
           <div className="label-eyebrow text-muted-foreground mb-4">Expense Category</div>
-          <div className="h-[260px]">
-            <ResponsiveContainer width="100%" height="100%">
+          <div style={{ width: '100%', height: 260, minHeight: 260 }}>
+            <ResponsiveContainer width="100%" height={260}>
               <PieChart>
                 <Pie data={categoryData} dataKey="value" innerRadius={54} outerRadius={90} paddingAngle={3}>
                   {categoryData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
@@ -137,7 +152,7 @@ export default function Ledger() {
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Description" className="w-full h-11 px-4 rounded-2xl border border-border bg-background text-sm" data-testid="exp-desc" />
               <input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="Amount (₹)" className="w-full h-11 px-4 rounded-2xl border border-border bg-background text-sm" data-testid="exp-amount" />
               <input value={form.paidBy} onChange={(e) => setForm({ ...form, paidBy: e.target.value })} placeholder="Paid By" className="w-full h-11 px-4 rounded-2xl border border-border bg-background text-sm" />
-              <button onClick={addExpense} className="w-full h-11 rounded-2xl bg-primary text-primary-foreground label-eyebrow" data-testid="exp-save">Add Expense</button>
+              <button onClick={addExpenseHandler} disabled={saving} className="w-full h-11 rounded-2xl bg-primary text-primary-foreground label-eyebrow disabled:opacity-60" data-testid="exp-save">{saving ? 'Saving…' : 'Add Expense'}</button>
             </div>
           </motion.div>
         </div>

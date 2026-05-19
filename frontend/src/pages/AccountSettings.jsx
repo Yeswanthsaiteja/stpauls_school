@@ -23,8 +23,15 @@ export default function AccountSettings() {
           <div className="h-16 w-16 rounded-3xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center text-white font-black text-xl">{(profile?.fullName || 'U')[0]}</div>
           <div>
             <div className="font-display font-black text-2xl tracking-tighter">{profile?.fullName || 'User'}</div>
-            <div className="label-eyebrow text-muted-foreground mt-1">{profile?.role || 'GUEST'} · {profile?.email || tenant?.email}</div>
+            <div className="label-eyebrow text-muted-foreground mt-1">{profile?.role} · {profile?.designation || profile?.department || ''}</div>
           </div>
+        </div>
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div><div className="label-eyebrow text-muted-foreground">Phone</div><div className="font-bold">{profile?.phone || '—'}</div></div>
+          <div><div className="label-eyebrow text-muted-foreground">Email</div><div className="font-bold">{profile?.email || '—'}</div></div>
+          {profile?.department && <div><div className="label-eyebrow text-muted-foreground">Department</div><div className="font-bold">{profile.department}</div></div>}
+          {profile?.employeeId && <div><div className="label-eyebrow text-muted-foreground">Employee ID</div><div className="font-bold">{profile.employeeId}</div></div>}
+          {profile?.linkedStudentName && <div><div className="label-eyebrow text-muted-foreground">Child</div><div className="font-bold">{profile.linkedStudentName}</div></div>}
         </div>
       </motion.div>
 

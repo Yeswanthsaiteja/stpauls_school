@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
-import { Mail, Phone, MapPin, Calendar, GraduationCap, IndianRupee, FileText, Edit, MessageCircle, Award } from 'lucide-react';
-import { demoStore } from '../../services/demoStore';
+import { Mail, Phone, MapPin, Calendar, GraduationCap, IndianRupee, FileText, Edit, MessageCircle, Award, Loader2 } from 'lucide-react';
+import { getStudent } from '../../services/firebase/studentsService';
+import { listTransactions, listFeeCategories } from '../../services/firebase/financeService';
+import { listResults } from '../../services/firebase/academicService';
 import { getWhatsAppUrl, formatCurrency } from '../../lib/utils';
 
 const Section = ({ icon: Icon, title, children, testId }) => (
@@ -25,8 +27,37 @@ const Row = ({ label, value }) => (
 export default function StudentProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const student = demoStore.list('students').find((s) => s.id === id);
+  const [student, setStudent] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+  const [feeCategories, setFeeCategories] = useState([]);
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('overview');
+
+  useEffect(() => {
+    const load = async () => {
+      const [stu, txs, res, fCats] = await Promise.all([
+        getStudent(id),
+        listTransactions({ studentId: id }),
+        listResults({}),
+        listFeeCategories(),
+      ]);
+      setStudent(stu);
+      setTransactions(txs);
+      setResults((res || []).filter((r) => r.studentId === id));
+      setFeeCategories(fCats);
+      setLoading(false);
+    };
+    load();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (!student) {
     return (
@@ -37,10 +68,16 @@ export default function StudentProfile() {
     );
   }
 
-  const transactions = demoStore.list('transactions').filter((t) => t.studentId === student.id);
-  const results = demoStore.list('results').filter((r) => r.studentId === student.id);
-  const paid = transactions.filter((t) => t.status === 'PAID').reduce((s, t) => s + t.amount, 0);
-  const pending = transactions.filter((t) => t.status !== 'PAID').reduce((s, t) => s + t.amount, 0);
+  const totalExpected = feeCategories.reduce((sum, cat) => {
+    // Skip transport-only fee if student doesn't use bus
+    if (cat.appliesTo === 'transport' && !student.usesBus) return sum;
+    // Skip hostel-only fee if student doesn't stay in hostel
+    if (cat.appliesTo === 'hostel' && !student.inHostel) return sum;
+    const amt = (cat.amounts && cat.amounts[student.className]) ?? (cat.amounts && cat.amounts['default']) ?? 0;
+    return sum + Number(amt);
+  }, 0);
+  const paid    = transactions.filter((t) => t.status === 'PAID').reduce((s, t) => s + (t.amount || 0), 0);
+  const pending = totalExpected - paid;
 
   const TABS = [
     { k: 'overview', label: 'Overview' },
@@ -152,11 +189,11 @@ export default function StudentProfile() {
               {results.map((r) => (
                 <div key={r.id} className="p-3 rounded-2xl border border-border">
                   <div className="flex justify-between items-center">
-                    <div className="font-bold">{r.subjectName}</div>
+                    <div className="font-bold">{r.subject}</div>
                     <span className="px-2 py-0.5 rounded-full label-eyebrow bg-emerald-500/10 text-emerald-500">{r.grade}</span>
                   </div>
                   <div className="mt-1 font-display font-black text-2xl tracking-tighter">{r.marks}<span className="text-sm text-muted-foreground">/{r.totalMarks}</span></div>
-                  <div className="label-eyebrow text-muted-foreground">{r.examName}</div>
+                  <div className="label-eyebrow text-muted-foreground">{r.examType}</div>
                 </div>
               ))}
             </div>
@@ -164,9 +201,24 @@ export default function StudentProfile() {
         </Section>
       )}
 
-      {tab === 'fees' && (
-        <Section icon={IndianRupee} title="Fee Ledger" testId="sec-fees">
-          <div className="space-y-2">
+      {tab === 'fees' && (() => {
+        const totalFee = feeCategories.reduce((sum, cat) => {
+          if (cat.appliesTo === 'transport' && !student.usesBus) return sum;
+          if (cat.appliesTo === 'hostel' && !student.inHostel) return sum;
+          const amt = (cat.amounts && cat.amounts[student.className]) ?? (cat.amounts && cat.amounts['default']) ?? 0;
+          return sum + Number(amt);
+        }, 0);
+        const paidFee = transactions.filter(t => t.status === 'PAID').reduce((sum, t) => sum + Number(t.amount || 0), 0);
+        const remainingFee = totalFee - paidFee;
+
+        return (
+          <Section icon={IndianRupee} title="Fee Ledger" testId="sec-fees">
+            <div className="grid grid-cols-3 gap-3 mb-5 text-center">
+              <div className="rounded-2xl bg-muted/30 p-3"><div className="label-eyebrow text-muted-foreground">Total Fee</div><div className="font-display font-black text-xl tracking-tighter">{formatCurrency(totalFee)}</div></div>
+              <div className="rounded-2xl bg-emerald-500/10 p-3"><div className="label-eyebrow text-emerald-500">Paid</div><div className="font-display font-black text-xl tracking-tighter">{formatCurrency(paidFee)}</div></div>
+              <div className="rounded-2xl bg-amber-500/10 p-3"><div className="label-eyebrow text-amber-500">Remaining</div><div className="font-display font-black text-xl tracking-tighter">{formatCurrency(remainingFee)}</div></div>
+            </div>
+            <div className="space-y-2">
             {transactions.length === 0 && <div className="text-sm text-muted-foreground text-center py-4">No fee records yet</div>}
             {transactions.map((t) => (
               <div key={t.id} className="flex items-center justify-between p-3 rounded-2xl border border-border">
@@ -181,9 +233,10 @@ export default function StudentProfile() {
               </div>
             ))}
           </div>
-          <button onClick={() => navigate(`/dashboard/finance/collect/${student.id}`)} className="mt-4 h-10 px-4 rounded-2xl bg-primary text-primary-foreground label-eyebrow" data-testid="profile-collect-fee">Collect Payment</button>
-        </Section>
-      )}
+            <button onClick={() => navigate(`/dashboard/finance/collect/${student.id}`)} className="mt-4 h-10 px-4 rounded-2xl bg-primary text-primary-foreground label-eyebrow" data-testid="profile-collect-fee">Collect Payment</button>
+          </Section>
+        );
+      })}
 
       {tab === 'attendance' && (
         <Section icon={Calendar} title="Attendance Calendar" testId="sec-att">

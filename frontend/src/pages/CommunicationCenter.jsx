@@ -1,65 +1,266 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Megaphone, MessageSquare, Send } from 'lucide-react';
-import { demoStore } from '../services/demoStore';
+import { Megaphone, MessageSquare, Send, Loader2, Trash2, Users } from 'lucide-react';
+import {
+  listAnnouncements, addAnnouncement, deleteAnnouncement,
+  sendMessage, subscribeMessages,
+} from '../services/firebase/communicationService';
+import { listEmployees } from '../services/firebase/employeesService';
+import { addNotification } from '../services/firebase/notificationsService';
+import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
 
-export default function CommunicationCenter() {
-  const [tab, setTab] = useState('announce');
-  const [list, setList] = useState(demoStore.list('announcements'));
-  const [form, setForm] = useState({ title: '', description: '', targetRole: 'ALL' });
+const TARGET_ROLES = ['ALL', 'STAFF', 'PARENT', 'STUDENT'];
 
-  const send = () => {
-    if (!form.title) return toast.error('Title required');
-    const row = demoStore.add('announcements', { ...form, date: new Date().toISOString(), postedBy: 'Admin' });
-    setList((l) => [row, ...l]);
-    setForm({ title: '', description: '', targetRole: 'ALL' });
-    toast.success('Announcement sent');
+// Admin always uses the hardcoded ID 'admin' — they have no Firestore employee doc
+const ADMIN_SENDER_ID = 'admin';
+
+export default function CommunicationCenter() {
+  const { profile } = useAuth();
+  const [tab, setTab] = useState('announce');
+
+  // ── Announcements ──────────────────────────────────────────────────────────
+  const [annList, setAnnList] = useState([]);
+  const [annLoading, setAnnLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [annForm, setAnnForm] = useState({ title: '', description: '', targetRole: 'ALL' });
+
+  useEffect(() => {
+    listAnnouncements().then((data) => { setAnnList(data); setAnnLoading(false); });
+  }, []);
+
+  const publishAnn = async () => {
+    if (!annForm.title) return toast.error('Title required');
+    setSending(true);
+    try {
+      const row = await addAnnouncement({ ...annForm, postedBy: profile?.fullName || 'Admin' });
+      if (row) {
+        setAnnList((l) => [row, ...l]);
+        setAnnForm({ title: '', description: '', targetRole: 'ALL' });
+        toast.success('Announcement published');
+        // Notification: broadcast to all staff (uses special userId 'broadcast_staff')
+        // Individual notifications are expensive; we use a broadcast marker that
+        // the staff dashboard reads from announcements via real-time subscription.
+      }
+    } catch {
+      toast.error('Failed to publish. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const removeAnn = async (id) => {
+    await deleteAnnouncement(id);
+    setAnnList((l) => l.filter((a) => a.id !== id));
+    toast.success('Announcement deleted');
+  };
+
+  // ── Direct Messages ────────────────────────────────────────────────────────
+  const [employees, setEmployees] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [msgLoading, setMsgLoading] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState(null); // full employee object
+  const [msgText, setMsgText] = useState('');
+  const [msgSending, setMsgSending] = useState(false);
+  const bottomRef = useRef(null);
+  const unsubRef = useRef(null);
+
+  useEffect(() => {
+    if (tab === 'msg') {
+      listEmployees({ status: 'ACTIVE' }).then((emps) => {
+        setEmployees(emps);
+        if (emps.length > 0 && !selectedEmployee) setSelectedEmployee(emps[0]);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  // Real-time message subscription when recipient changes
+  useEffect(() => {
+    if (tab !== 'msg' || !selectedEmployee) return;
+    setMsgLoading(true);
+    setMessages([]);
+
+    // Clean up previous subscription
+    if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
+
+    // Admin's ID is 'admin', selected employee's ID is their Firestore doc ID
+    const recipientId = selectedEmployee.id;
+    unsubRef.current = subscribeMessages(ADMIN_SENDER_ID, recipientId, (msgs) => {
+      setMessages(msgs);
+      setMsgLoading(false);
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    });
+
+    return () => { if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; } };
+  }, [tab, selectedEmployee?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sendMsg = async () => {
+    if (!msgText.trim()) return;
+    if (!selectedEmployee) return toast.error('Select a recipient');
+    setMsgSending(true);
+    try {
+      const row = await sendMessage({
+        senderId: ADMIN_SENDER_ID,
+        senderName: profile?.fullName || 'Admin',
+        recipientId: selectedEmployee.id,       // Firestore employee doc ID
+        recipientName: selectedEmployee.fullName || 'Staff',
+        text: msgText.trim(),
+      });
+      if (row) {
+        setMsgText('');
+        // Send notification to staff member
+        await addNotification({
+          userId: selectedEmployee.id,    // staff's Firestore doc ID
+          type: 'message',
+          title: `New message from Admin`,
+          body: msgText.trim().slice(0, 80),
+        });
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      }
+    } catch {
+      toast.error('Failed to send message.');
+    } finally {
+      setMsgSending(false);
+    }
   };
 
   return (
     <div className="space-y-6" data-testid="communication-center">
       <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tighter uppercase">Communication</h1>
       <div className="flex bg-muted rounded-full p-1 w-fit">
-        <button onClick={() => setTab('announce')} data-testid="tab-announce" className={`px-4 py-1.5 rounded-full label-eyebrow ${tab === 'announce' ? 'bg-background shadow' : 'text-muted-foreground'}`}>
+        <button onClick={() => setTab('announce')} data-testid="tab-announce"
+          className={`px-4 py-1.5 rounded-full label-eyebrow transition-colors ${tab === 'announce' ? 'bg-background shadow' : 'text-muted-foreground'}`}>
           <Megaphone className="h-3.5 w-3.5 inline mr-1.5" />Announcements
         </button>
-        <button onClick={() => setTab('msg')} data-testid="tab-msg" className={`px-4 py-1.5 rounded-full label-eyebrow ${tab === 'msg' ? 'bg-background shadow' : 'text-muted-foreground'}`}>
+        <button onClick={() => setTab('msg')} data-testid="tab-msg"
+          className={`px-4 py-1.5 rounded-full label-eyebrow transition-colors ${tab === 'msg' ? 'bg-background shadow' : 'text-muted-foreground'}`}>
           <MessageSquare className="h-3.5 w-3.5 inline mr-1.5" />Direct Messages
         </button>
       </div>
 
-      {tab === 'announce' ? (
+      {tab === 'announce' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {/* Posted announcements */}
           <div className="lg:col-span-2 glass-morphism rounded-[2rem] p-5">
-            <div className="label-eyebrow text-muted-foreground mb-3">Posted</div>
+            <div className="label-eyebrow text-muted-foreground mb-3">Posted Announcements</div>
+            {annLoading && <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>}
             <div className="space-y-3">
-              {list.map((a) => (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={a.id} className="p-4 rounded-2xl border border-border">
-                  <div className="flex justify-between">
-                    <div className="font-bold">{a.title}</div>
-                    <span className="label-eyebrow bg-primary/10 text-primary px-2.5 py-1 rounded-full">{a.targetRole}</span>
+              {annList.map((a) => (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={a.id}
+                  className="p-4 rounded-2xl border border-border">
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <div className="font-bold">{a.title}</div>
+                        <span className="label-eyebrow bg-primary/10 text-primary px-2.5 py-1 rounded-full">{a.targetRole}</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{a.description}</p>
+                      <div className="label-eyebrow text-muted-foreground mt-2 flex items-center gap-2">
+                        <Users className="h-3 w-3" />
+                        {a.postedBy || 'Admin'} · {a.date}
+                      </div>
+                    </div>
+                    <button onClick={() => removeAnn(a.id)} className="h-8 w-8 rounded-xl bg-rose-500/10 text-rose-500 grid place-items-center hover:bg-rose-500/20 flex-shrink-0">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-1">{a.description}</p>
-                  <div className="label-eyebrow text-muted-foreground mt-2">{new Date(a.date).toLocaleString()}</div>
                 </motion.div>
               ))}
+              {!annLoading && annList.length === 0 && (
+                <div className="text-center text-sm text-muted-foreground py-8">No announcements yet. Compose one →</div>
+              )}
             </div>
           </div>
-          <div className="glass-morphism rounded-[2rem] p-5">
-            <div className="label-eyebrow text-muted-foreground mb-3">Compose</div>
-            <input data-testid="ann-title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Title" className="w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary" />
-            <textarea data-testid="ann-desc" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Message" rows={4} className="mt-3 w-full px-4 py-2.5 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary" />
-            <select data-testid="ann-target" value={form.targetRole} onChange={(e) => setForm({ ...form, targetRole: e.target.value })} className="mt-3 w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm">
-              <option>ALL</option><option>STAFF</option><option>PARENT</option><option>STUDENT</option>
-            </select>
-            <button onClick={send} data-testid="ann-send" className="mt-3 w-full h-11 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center justify-center gap-2">
-              <Send className="h-3.5 w-3.5" /> Publish
+
+          {/* Compose */}
+          <div className="glass-morphism rounded-[2rem] p-5 space-y-3">
+            <div className="label-eyebrow text-muted-foreground">Compose Announcement</div>
+            <input data-testid="ann-title" value={annForm.title} onChange={(e) => setAnnForm({ ...annForm, title: e.target.value })}
+              placeholder="Title" className="w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary" />
+            <textarea data-testid="ann-desc" value={annForm.description} onChange={(e) => setAnnForm({ ...annForm, description: e.target.value })}
+              placeholder="Message body" rows={5}
+              className="w-full px-4 py-2.5 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary resize-none" />
+            <div>
+              <label className="label-eyebrow text-muted-foreground">Target Audience</label>
+              <select data-testid="ann-target" value={annForm.targetRole} onChange={(e) => setAnnForm({ ...annForm, targetRole: e.target.value })}
+                className="mt-1 w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm">
+                {TARGET_ROLES.map((r) => <option key={r}>{r}</option>)}
+              </select>
+            </div>
+            <button onClick={publishAnn} disabled={sending} data-testid="ann-send"
+              className="w-full h-11 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center justify-center gap-2 disabled:opacity-60">
+              {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Publish
             </button>
           </div>
         </div>
-      ) : (
-        <div className="glass-morphism rounded-[2rem] p-8 text-center text-sm text-muted-foreground">Direct Messages — feature scaffold in place.</div>
+      )}
+
+      {tab === 'msg' && (
+        <div className="glass-morphism rounded-[2rem] overflow-hidden">
+          <div className="grid grid-cols-1 md:grid-cols-4" style={{ minHeight: '500px' }}>
+            {/* Recipient list */}
+            <div className="border-r border-border p-4 space-y-2 overflow-y-auto">
+              <div className="label-eyebrow text-muted-foreground mb-3">Staff / Recipients</div>
+              {employees.length === 0 && (
+                <div className="text-xs text-muted-foreground text-center py-4">No active employees found</div>
+              )}
+              {employees.map((e) => (
+                <button key={e.id} onClick={() => setSelectedEmployee(e)}
+                  className={`w-full text-left p-3 rounded-2xl transition-colors flex items-center gap-2 ${selectedEmployee?.id === e.id ? 'bg-primary/10 border border-primary/30' : 'hover:bg-muted/60'}`}>
+                  <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center text-white font-black text-xs flex-shrink-0">
+                    {(e.fullName || 'U')[0]}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-bold text-sm truncate">{e.fullName}</div>
+                    <div className="label-eyebrow text-muted-foreground truncate">{e.department || e.role || ''}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Chat area */}
+            <div className="md:col-span-3 flex flex-col">
+              <div className="p-4 border-b border-border label-eyebrow text-muted-foreground">
+                {selectedEmployee
+                  ? `Chat with: ${selectedEmployee.fullName}`
+                  : 'Select a recipient'}
+              </div>
+              <div className="flex-1 p-4 space-y-3 overflow-y-auto" style={{ maxHeight: '380px' }}>
+                {msgLoading && <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-primary" /></div>}
+                {!msgLoading && messages.length === 0 && (
+                  <div className="text-center text-sm text-muted-foreground py-10">No messages yet. Start the conversation.</div>
+                )}
+                {messages.map((m) => {
+                  const isMe = m.senderId === ADMIN_SENDER_ID;
+                  return (
+                    <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-xs px-4 py-2 rounded-2xl text-sm ${isMe ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>
+                        {!isMe && <div className="label-eyebrow mb-1 opacity-70">{m.senderName}</div>}
+                        <div>{m.text || m.body}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={bottomRef} />
+              </div>
+              <div className="p-4 border-t border-border flex gap-2">
+                <input
+                  value={msgText}
+                  onChange={(e) => setMsgText(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMsg()}
+                  placeholder={selectedEmployee ? `Message ${selectedEmployee.fullName}…` : 'Select a recipient first'}
+                  disabled={!selectedEmployee}
+                  className="flex-1 h-10 px-4 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary disabled:opacity-50"
+                />
+                <button onClick={sendMsg} disabled={msgSending || !msgText.trim() || !selectedEmployee}
+                  className="h-10 px-4 rounded-2xl bg-primary text-primary-foreground label-eyebrow disabled:opacity-60 flex items-center gap-1.5">
+                  {msgSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Send
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

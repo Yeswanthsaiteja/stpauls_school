@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { NavLink } from 'react-router-dom';
 import { X, Camera } from 'lucide-react';
-import { demoStore } from '../services/demoStore';
+
 
 export default function EventGallery() {
-  const photos = demoStore.list('gallery');
+  const [photos, setPhotos] = React.useState([]); React.useEffect(() => { import('../services/firebase/communicationService').then(m => m.listGallery().then(setPhotos)); }, []);
   const [open, setOpen] = useState(null);
 
   return (

@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { UploadCloud, Check, AlertTriangle, MessageCircle, Send } from 'lucide-react';
-import { demoStore } from '../services/demoStore';
+import { listStudents } from '../services/firebase/studentsService';
+import { saveAttendance } from '../services/firebase/attendanceService';
 import { CLASS_OPTIONS, SECTION_OPTIONS } from '../lib/pdfUtils';
 import { getWhatsAppUrl } from '../lib/utils';
 import { toast } from 'sonner';
@@ -27,13 +28,15 @@ function parseAttendance(text) {
 }
 
 export default function RfidAttendance() {
-  const students = demoStore.list('students');
+  const [students, setStudents] = useState([]);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [cls, setCls] = useState('');
   const [sec, setSec] = useState('');
   const [parsed, setParsed] = useState([]);
   const [committed, setCommitted] = useState(false);
-  const navigate = useNavigate();
+  const [committing, setCommitting] = useState(false);
+
+  useEffect(() => { listStudents({ status: 'ACTIVE' }).then(setStudents); }, []);
 
   const onFile = (f) => {
     if (!f) return;
@@ -52,12 +55,21 @@ export default function RfidAttendance() {
   const filtered = known.filter((r) => (!cls || r.student.className === cls) && (!sec || r.student.section === sec));
   const absent = filtered.filter((r) => !r.present);
 
-  const commit = () => {
+  const commit = async () => {
+    setCommitting(true);
+    // Group by class-section and save to Firestore
+    const grouped = {};
     filtered.forEach((r) => {
-      demoStore.add('attendance', { studentId: r.student.id, date, status: r.present ? 'PRESENT' : 'ABSENT', type: 'STUDENT', markedBy: 'RFID' });
+      const key = `${r.student.className}_${r.student.section}`;
+      if (!grouped[key]) grouped[key] = { className: r.student.className, section: r.student.section, records: {} };
+      grouped[key].records[r.student.id] = r.present ? 'PRESENT' : 'ABSENT';
     });
+    for (const g of Object.values(grouped)) {
+      await saveAttendance(g.className, g.section, date, g.records);
+    }
     setCommitted(true);
-    toast.success(`Recorded attendance for ${filtered.length} students`);
+    setCommitting(false);
+    toast.success(`Saved attendance for ${filtered.length} students to Firestore ✓`);
   };
 
   const bulkWhatsApp = () => {
@@ -136,8 +148,8 @@ export default function RfidAttendance() {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <button onClick={commit} disabled={committed} className="h-11 px-5 rounded-2xl bg-emerald-500 text-white label-eyebrow flex items-center gap-2 disabled:opacity-50" data-testid="rfid-commit">
-              <Check className="h-3.5 w-3.5" />{committed ? 'Committed' : `Commit ${filtered.length} Records`}
+            <button onClick={commit} disabled={committed || committing} className="h-11 px-5 rounded-2xl bg-emerald-500 text-white label-eyebrow flex items-center gap-2 disabled:opacity-50" data-testid="rfid-commit">
+              <Check className="h-3.5 w-3.5" />{committing ? 'Saving to Firebase…' : committed ? 'Committed ✓' : `Commit ${filtered.length} Records`}
             </button>
             <button onClick={bulkWhatsApp} disabled={absent.length === 0} className="h-11 px-5 rounded-2xl bg-emerald-500/10 text-emerald-600 label-eyebrow flex items-center gap-2 disabled:opacity-50" data-testid="rfid-bulk-wa">
               <Send className="h-3.5 w-3.5" />Send Absent Notifications · {absent.length}

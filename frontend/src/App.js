@@ -30,6 +30,9 @@ import Timetable from './pages/Timetable';
 import RfidAttendance from './pages/RfidAttendance';
 import LeaveManagement from './pages/LeaveManagement';
 import EmployeeAdd from './pages/EmployeeAdd';
+import EmployeeDirectoryPage from './pages/employees/EmployeeDirectoryPage';
+import EmployeeRemoval from './pages/employees/EmployeeRemoval';
+import EmployeeRejoin from './pages/employees/EmployeeRejoin';
 import StudentDirectoryPage from './pages/students/StudentDirectoryPage';
 import StudentProfile from './pages/students/StudentProfile';
 import AdmissionFormFull from './pages/students/AdmissionFormFull';
@@ -44,6 +47,7 @@ import Payroll from './pages/finance/Payroll';
 import LessonPlanning from './pages/academic/LessonPlanning';
 import YearEndPromotion from './pages/academic/YearEndPromotion';
 import SubjectsTopicsCRUD from './pages/academic/SubjectsTopicsCRUD';
+import ExamSetupPage from './pages/academic/ExamSetupPage';
 import Diary from './pages/Diary';
 import ExamTimetablePage from './pages/ExamTimetablePage';
 import TeacherMessaging from './pages/TeacherMessaging';
@@ -69,7 +73,8 @@ function RoleHome() {
   const { profile } = useAuth();
   const role = profile?.role;
   if (role === 'PARENT') return <Navigate to="/dashboard/parent-dashboard" replace />;
-  if (role === 'STAFF' || role === 'TEACHER') return <Navigate to="/dashboard/staff-dashboard" replace />;
+  const staffRoles = ['staff', 'teacher', 'class teacher', 'principal', 'vice principal', 'accountant', 'librarian', 'lab assistant', 'administrative', 'support staff'];
+  if (role && staffRoles.includes(role.toLowerCase())) return <Navigate to="/dashboard/staff-dashboard" replace />;
   return <AdminDashboard />;
 }
 
@@ -90,7 +95,7 @@ function App() {
               <Route element={<ProtectedRoute />}>
                 <Route path="/dashboard" element={<DashboardLayout />}>
                   <Route index element={<RoleHome />} />
-                  <Route path="staff-dashboard" element={<StaffDashboard />} />
+                  <Route path="staff-dashboard/*" element={<StaffDashboard />} />
                   <Route path="parent-dashboard/*" element={<ParentDashboard />} />
                   <Route path="students/*" element={<StudentsModule />} />
                   <Route path="academic/*" element={<AcademicModule />} />
@@ -112,13 +117,18 @@ function App() {
                   <Route path="bulk-import" element={<BulkImport />} />
                   <Route path="timetable" element={<Timetable />} />
                   <Route path="employees/add" element={<EmployeeAdd />} />
+                  <Route path="employees/directory" element={<EmployeeDirectoryPage />} />
+                  <Route path="employees/removal" element={<EmployeeRemoval />} />
+                  <Route path="employees/rejoin" element={<EmployeeRejoin />} />
                   <Route path="academic/classes" element={<ClassesSections />} />
+                  <Route path="academic/exams" element={<ExamSetupPage />} />
                   <Route path="finance/setup" element={<FeeSetup />} />
                   <Route path="finance/collect/:studentId" element={<FeeCollection />} />
                   <Route path="finance/collect" element={<FeeCollection />} />
                   <Route path="students/directory" element={<StudentDirectoryPage />} />
                   <Route path="students/profile/:id" element={<StudentProfile />} />
                   <Route path="students/admission-full" element={<AdmissionFormFull />} />
+                  <Route path="students/edit/:id" element={<AdmissionFormFull />} />
                   <Route path="students/removal" element={<StudentRemoval />} />
                   <Route path="students/rejoin" element={<StudentRejoin />} />
                   <Route path="students/certificates" element={<Certificates />} />

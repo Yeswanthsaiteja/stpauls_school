@@ -6,18 +6,17 @@ import { doc, getDoc } from 'firebase/firestore';
 const TenantContext = createContext(null);
 
 const DEMO_TENANT = {
-  id: 'demo',
-  name: 'St. Pauls Academy',
-  organizationName: 'St. Pauls Academy',
+  id: 'stpauls',
+  name: "St. Paul's High School",
+  organizationName: "St. Paul's High School",
   logoUrl: '',
   primaryColor: '#6366f1',
   accentColor: '#a5b4fc',
-  // 60 days from now
   subscriptionStartDate: new Date().toISOString(),
-  subscriptionEndDate: new Date(Date.now() + 60 * 86400000).toISOString(),
-  address: 'Hyderabad, India',
+  subscriptionEndDate: new Date(Date.now() + 365 * 86400000).toISOString(),
+  address: 'Hyderabad, Telangana',
   contactNumber: '+91 9000000000',
-  email: 'office@stpauls.example',
+  email: 'office@stpauls.edu.in',
 };
 
 export function TenantProvider({ children }) {

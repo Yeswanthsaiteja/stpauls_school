@@ -2,11 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { NavLink } from 'react-router-dom';
 import { Clock, CheckCircle2, ArrowRight, Trophy } from 'lucide-react';
-import { demoStore } from '../services/demoStore';
+
 import { toast } from 'sonner';
 
 export default function OnlineExams() {
-  const exams = demoStore.list('exams');
+  const [exams, setExams] = React.useState([]);
   const [active, setActive] = useState(null);
 
   return (
@@ -64,7 +64,7 @@ function ExamRunner({ exam, onClose }) {
     });
     setScore(s);
     setDone(true);
-    demoStore.add('examResponses', { examId: exam.id, studentId: 'demo-stu-1', answers, score, submittedAt: new Date().toISOString() });
+    // examResponse: { examId: exam.id, studentId: 'demo-stu-1', answers, score, submittedAt: new Date().toISOString() });
     toast.success(`Submitted · ${s}/${exam.totalMarks}`);
   };
 

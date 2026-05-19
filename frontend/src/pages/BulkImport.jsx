@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Upload, Download, CheckCircle2, X, FileSpreadsheet } from 'lucide-react';
+import { Upload, Download, CheckCircle2, Loader2, FileSpreadsheet } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { demoStore, newAdmissionNo } from '../services/demoStore';
+import { bulkAddStudents } from '../services/firebase/studentsService';
 import { toast } from 'sonner';
 
 const SAMPLE = `firstName,lastName,className,section,rollNo,gender,phoneNumber,fatherName,motherName
@@ -26,6 +26,7 @@ export default function BulkImport() {
   const [rows, setRows] = useState([]);
   const [fileName, setFileName] = useState('');
   const [committed, setCommitted] = useState(0);
+  const [committing, setCommitting] = useState(false);
   const navigate = useNavigate();
 
   const onFile = (f) => {
@@ -45,23 +46,25 @@ export default function BulkImport() {
     setRows(parseCSV(SAMPLE));
   };
 
-  const commit = () => {
-    let n = 0;
-    rows.forEach((r, idx) => {
-      const adm = newAdmissionNo();
-      demoStore.add('students', {
-        id: `stu-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+  const commit = async () => {
+    if (!rows.length) return;
+    setCommitting(true);
+    try {
+      const enriched = rows.map((r, idx) => ({
         ...r,
         fullName: `${r.firstName || ''} ${r.lastName || ''}`.trim(),
-        admissionNo: adm,
         status: 'ACTIVE',
         admissionDate: new Date().toISOString(),
-      });
-      n++;
-    });
-    setCommitted(n);
-    toast.success(`Imported ${n} students`);
-    setTimeout(() => navigate('..'), 900);
+      }));
+      await bulkAddStudents(enriched);
+      setCommitted(enriched.length);
+      toast.success(`Imported ${enriched.length} students to Firestore`);
+      setTimeout(() => navigate('..'), 1200);
+    } catch (err) {
+      toast.error('Import failed: ' + err.message);
+    } finally {
+      setCommitting(false);
+    }
   };
 
   const downloadSample = () => {
@@ -99,9 +102,9 @@ export default function BulkImport() {
         <div className="glass-morphism rounded-[2rem] p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="label-eyebrow text-muted-foreground">Preview · {rows.length} rows</div>
-            <button onClick={commit} disabled={committed > 0} data-testid="commit-import-btn" className="h-10 px-5 rounded-2xl bg-emerald-500 text-white label-eyebrow flex items-center gap-2 disabled:opacity-50">
-              {committed > 0 ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
-              {committed > 0 ? `Imported ${committed}` : `Import ${rows.length} Students`}
+            <button onClick={commit} disabled={committed > 0 || committing} data-testid="commit-import-btn" className="h-10 px-5 rounded-2xl bg-emerald-500 text-white label-eyebrow flex items-center gap-2 disabled:opacity-50">
+              {committing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : committed > 0 ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
+              {committed > 0 ? `Imported ${committed}` : committing ? 'Saving to Firestore…' : `Import ${rows.length} Students`}
             </button>
           </div>
           <div className="overflow-x-auto thin-scrollbar">

@@ -1,9 +1,15 @@
 // Firebase initialization. Reads from REACT_APP_FIREBASE_* env vars.
-// If config is missing, exports null instances and a flag — the UI shows a banner.
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import {
+  getAuth,
+  connectAuthEmulator,
+  RecaptchaVerifier,       // re-export for phone auth
+  signInWithPhoneNumber,   // re-export for phone auth
+} from 'firebase/auth';
 import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+export { RecaptchaVerifier, signInWithPhoneNumber };
+
 
 const cfg = {
   apiKey: process.env.REACT_APP_FIREBASE_API_KEY,

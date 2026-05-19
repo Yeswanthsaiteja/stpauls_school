@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Users, UserSquare2, IndianRupee, CalendarCheck, AlertCircle, RefreshCw, Download, Sparkles, TrendingUp, GraduationCap } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useTranslation } from 'react-i18next';
-import { demoStore } from '../services/demoStore';
+import { listStudents } from '../services/firebase/studentsService';
+import { listEmployees } from '../services/firebase/employeesService';
+import { listTransactions } from '../services/firebase/financeService';
 import { formatCurrency, exportToCSV } from '../lib/utils';
 import { useTenant } from '../contexts/TenantContext';
 import axios from 'axios';
@@ -45,9 +47,15 @@ export default function AdminDashboard() {
   const [insights, setInsights] = useState(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
 
-  const students = demoStore.list('students');
-  const employees = demoStore.list('employees');
-  const transactions = demoStore.list('transactions');
+  const [students, setStudents] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+
+  useEffect(() => {
+    listStudents({ status: 'ACTIVE' }).then(setStudents);
+    listEmployees({ status: 'ACTIVE' }).then(setEmployees);
+    listTransactions().then(setTransactions);
+  }, []);
 
   const stats = useMemo(() => {
     const paid = transactions.filter((x) => x.status === 'PAID').reduce((s, x) => s + x.amount, 0);
@@ -61,7 +69,7 @@ export default function AdminDashboard() {
       attendance: '94%',
       pending: formatCurrency(pending),
     };
-  }, [students, employees, transactions, tick]);
+  }, [students, employees, transactions]);
 
   const revenueData = useMemo(() => {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -76,7 +84,7 @@ export default function AdminDashboard() {
     { type: 'fee', text: 'Reminder dispatched · 6 parents via WhatsApp', time: '2h ago', dot: 'bg-emerald-500' },
   ];
 
-  const loadInsights = async () => {
+  const loadInsights = useCallback(async () => {
     setInsightsLoading(true);
     try {
       const url = `${process.env.REACT_APP_BACKEND_URL}/api/ai/insights`;
@@ -95,9 +103,9 @@ export default function AdminDashboard() {
     } finally {
       setInsightsLoading(false);
     }
-  };
+  }, [tenant, stats]);
 
-  useEffect(() => { loadInsights(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { loadInsights(); }, [loadInsights]);
 
   const handleExport = () => {
     exportToCSV(transactions.map((t) => ({
@@ -154,8 +162,8 @@ export default function AdminDashboard() {
                 ))}
               </div>
             </div>
-            <div className="h-[240px]">
-              <ResponsiveContainer width="100%" height="100%">
+            <div style={{ width: '100%', height: 240, minHeight: 240 }}>
+              <ResponsiveContainer width="100%" height={240}>
                 <AreaChart data={revenueData}>
                   <defs>
                     <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">

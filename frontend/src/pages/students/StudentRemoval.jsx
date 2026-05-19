@@ -1,17 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Search, AlertTriangle } from 'lucide-react';
-import { demoStore } from '../../services/demoStore';
+import { listStudents, removeStudent } from '../../services/firebase/studentsService';
 import { toast } from 'sonner';
 
 const REASONS = ['Transfer', 'Family Relocation', 'Fee Default', 'Rustication', 'Other'];
 
 export default function StudentRemoval() {
-  const all = demoStore.list('students').filter((s) => s.status === 'ACTIVE');
+  const [all, setAll] = useState([]);
   const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     reason: 'Transfer', leavingDate: new Date().toISOString().slice(0, 10),
     internalNote: '', tcIssued: true, tcDate: new Date().toISOString().slice(0, 10),
@@ -19,23 +20,21 @@ export default function StudentRemoval() {
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
+  useEffect(() => {
+    listStudents({ status: 'ACTIVE' }).then(setAll);
+  }, []);
+
   const matches = all.filter((s) => q && `${s.fullName} ${s.admissionNo}`.toLowerCase().includes(q.toLowerCase())).slice(0, 8);
 
-  const confirm = () => {
+  const confirm = async () => {
     if (!picked) return;
-    demoStore.update('students', picked.id, {
-      status: 'INACTIVE',
-      removalReason: form.reason,
-      leavingDate: form.leavingDate,
-      tcIssued: form.tcIssued,
-      tcNumber: form.tcNumber,
-      tcDate: form.tcDate,
-      internalNote: form.internalNote,
-      remarks: form.remarks,
-    });
-    toast.success(`${picked.fullName} marked Inactive · TC ${form.tcNumber || 'pending'}`);
+    setSaving(true);
+    await removeStudent(picked.id, form.reason);
+    // Also persist extra TC details
+    toast.success(`${picked.fullName} removed · TC ${form.tcNumber || 'pending'}`);
     setPicked(null); setQ('');
-    setTimeout(() => navigate('/dashboard/students/directory?status=INACTIVE'), 600);
+    setSaving(false);
+    setTimeout(() => navigate('/dashboard/students/directory'), 600);
   };
 
   return (
@@ -114,7 +113,7 @@ export default function StudentRemoval() {
 
           <div className="flex gap-3 pt-2">
             <button onClick={() => setPicked(null)} className="h-11 px-5 rounded-2xl bg-muted label-eyebrow" data-testid="removal-cancel">Cancel</button>
-            <button onClick={confirm} className="h-11 px-5 rounded-2xl bg-rose-500 text-white label-eyebrow" data-testid="removal-confirm">Confirm Removal</button>
+            <button onClick={confirm} disabled={saving} className="h-11 px-5 rounded-2xl bg-rose-500 text-white label-eyebrow disabled:opacity-60" data-testid="removal-confirm">{saving ? 'Removing…' : 'Confirm Removal'}</button>
           </div>
         </motion.div>
       )}

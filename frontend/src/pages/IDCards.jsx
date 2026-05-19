@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Printer, Download } from 'lucide-react';
-import { demoStore } from '../services/demoStore';
+
 import { useTenant } from '../contexts/TenantContext';
 
 export default function IDCards() {
-  const students = demoStore.list('students');
+  const [students, setStudents] = React.useState([]);
+  React.useEffect(() => { import('../services/firebase/studentsService').then(m => m.listStudents({ status: 'ACTIVE' }).then(setStudents)); }, []);
   const { tenant } = useTenant();
   const [sel, setSel] = useState(students.slice(0, 4).map((s) => s.id));
   const [template, setTemplate] = useState('indigo');

@@ -1,32 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { NavLink } from 'react-router-dom';
-import { Plus, Trash2 } from 'lucide-react';
-import { demoStore } from '../../services/demoStore';
+import { Plus, Trash2, RefreshCw } from 'lucide-react';
+import { listFeeCategories, addFeeCategory, deleteFeeCategory, updateFeeCategory, listFeeInstallments } from '../../services/firebase/financeService';
 import { CLASS_OPTIONS } from '../../lib/pdfUtils';
 import { formatCurrency } from '../../lib/utils';
 import { toast } from 'sonner';
 
 export default function FeeSetup() {
-  const [cats, setCats] = useState(demoStore.list('feeCategories'));
-  const [installments, setInstallments] = useState(demoStore.list('feeInstallments'));
-  const [newCat, setNewCat] = useState({ name: '', type: 'recurring', amount: 0 });
+  const [cats, setCats] = useState([]);
+  const [installments, setInstallments] = useState([]);
+  const [newCat, setNewCat] = useState({ name: '', type: 'recurring', appliesTo: 'all', amount: 0 });
+  const [loading, setLoading] = useState(true);
 
-  const addCategory = () => {
-    if (!newCat.name) return toast.error('Name required');
-    const row = demoStore.add('feeCategories', { ...newCat, amounts: { default: Number(newCat.amount) } });
-    setCats((c) => [row, ...c]);
-    setNewCat({ name: '', type: 'recurring', amount: 0 });
-    toast.success('Category added');
+  const load = async () => {
+    setLoading(true);
+    const [c, inst] = await Promise.all([listFeeCategories(), listFeeInstallments()]);
+    setCats(c); setInstallments(inst);
+    setLoading(false);
   };
-  const removeCat = (id) => { demoStore.remove('feeCategories', id); setCats(demoStore.list('feeCategories')); };
+  useEffect(() => { load(); }, []);
 
-  const updateAmount = (catId, klass, val) => {
-    const cat = demoStore.list('feeCategories').find((c) => c.id === catId);
+  const addCategory = async () => {
+    if (!newCat.name) return toast.error('Name required');
+    const row = await addFeeCategory({ ...newCat, amounts: { default: Number(newCat.amount) } });
+    setCats((c) => [row, ...c]);
+    setNewCat({ name: '', type: 'recurring', appliesTo: 'all', amount: 0 });
+    toast.success('Category saved to Firestore');
+  };
+
+  const removeCat = async (id) => {
+    await deleteFeeCategory(id);
+    setCats(c => c.filter(x => x.id !== id));
+    toast.success('Category deleted');
+  };
+
+  const updateAmount = async (catId, klass, val) => {
+    const cat = cats.find((c) => c.id === catId);
     if (!cat) return;
     const patch = { amounts: { ...(cat.amounts || {}), [klass]: Number(val) || 0 } };
-    demoStore.update('feeCategories', catId, patch);
-    setCats(demoStore.list('feeCategories'));
+    await updateFeeCategory(catId, patch);
+    setCats(cs => cs.map(c => c.id === catId ? { ...c, ...patch } : c));
   };
 
   return (
@@ -37,14 +51,19 @@ export default function FeeSetup() {
       {/* Add category */}
       <div className="glass-morphism rounded-[2rem] p-5">
         <div className="label-eyebrow text-muted-foreground mb-3">Add Fee Category</div>
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-          <input value={newCat.name} onChange={(e) => setNewCat({ ...newCat, name: e.target.value })} placeholder="Category name" className="h-11 px-4 rounded-2xl border border-border bg-card text-sm" data-testid="fs-cat-name" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <input value={newCat.name} onChange={(e) => setNewCat({ ...newCat, name: e.target.value })} placeholder="Category name (e.g. Transport Fee)" className="h-11 px-4 rounded-2xl border border-border bg-card text-sm lg:col-span-2" data-testid="fs-cat-name" />
           <select value={newCat.type} onChange={(e) => setNewCat({ ...newCat, type: e.target.value })} className="h-11 px-3 rounded-2xl border border-border bg-card text-sm" data-testid="fs-cat-type">
             <option value="recurring">Recurring</option>
             <option value="one-time">One-time</option>
           </select>
+          <select value={newCat.appliesTo} onChange={(e) => setNewCat({ ...newCat, appliesTo: e.target.value })} className="h-11 px-3 rounded-2xl border border-border bg-card text-sm" data-testid="fs-cat-applies">
+            <option value="all">Applies to: All Students</option>
+            <option value="transport">Applies to: Transport Students</option>
+            <option value="hostel">Applies to: Hostel Students</option>
+          </select>
           <input type="number" value={newCat.amount} onChange={(e) => setNewCat({ ...newCat, amount: e.target.value })} placeholder="Default amount" className="h-11 px-4 rounded-2xl border border-border bg-card text-sm" data-testid="fs-cat-amount" />
-          <button onClick={addCategory} className="h-11 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center justify-center gap-2" data-testid="fs-add-cat"><Plus className="h-3.5 w-3.5" />Add</button>
+          <button onClick={addCategory} className="h-11 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center justify-center gap-2 sm:col-span-2 lg:col-span-1" data-testid="fs-add-cat"><Plus className="h-3.5 w-3.5" />Add</button>
         </div>
       </div>
 
@@ -55,7 +74,14 @@ export default function FeeSetup() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <div className="font-display font-black text-lg tracking-tighter">{c.name}</div>
-                <div className="label-eyebrow text-muted-foreground">{c.type}</div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="label-eyebrow text-muted-foreground">{c.type}</span>
+                  {c.appliesTo && c.appliesTo !== 'all' && (
+                    <span className={`px-2 py-0.5 rounded-full label-eyebrow ${c.appliesTo === 'transport' ? 'bg-indigo-500/10 text-indigo-500' : 'bg-amber-500/10 text-amber-600'}`}>
+                      {c.appliesTo === 'transport' ? 'Transport Only' : 'Hostel Only'}
+                    </span>
+                  )}
+                </div>
               </div>
               <button onClick={() => removeCat(c.id)} className="p-2 rounded-xl hover:bg-rose-500/10 hover:text-rose-500" data-testid={`fs-del-${c.id}`}><Trash2 className="h-3.5 w-3.5" /></button>
             </div>

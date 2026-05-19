@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutGrid, List, Search, Filter, Plus } from 'lucide-react';
-import { demoStore } from '../../services/demoStore';
+import { LayoutGrid, List, Search, Filter, Plus, Loader2, RefreshCw } from 'lucide-react';
+import { listStudents } from '../../services/firebase/studentsService';
 import { CLASS_OPTIONS, SECTION_OPTIONS } from '../../lib/pdfUtils';
 
 export default function StudentDirectoryPage() {
-  const all = demoStore.list('students');
+  const [all, setAll] = useState([]);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const [view, setView] = useState('grid');
   const [q, setQ] = useState('');
@@ -14,6 +15,15 @@ export default function StudentDirectoryPage() {
   const [sec, setSec] = useState('');
   const [gender, setGender] = useState('');
   const [status, setStatus] = useState('ACTIVE');
+
+  const load = async () => {
+    setLoading(true);
+    const data = await listStudents();
+    setAll(data);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
 
   const list = useMemo(() => all.filter((s) => {
     const matchQ = !q || `${s.fullName} ${s.admissionNo}`.toLowerCase().includes(q.toLowerCase());
@@ -30,14 +40,17 @@ export default function StudentDirectoryPage() {
         <div>
           <NavLink to=".." className="label-eyebrow text-primary">← Back</NavLink>
           <h1 className="font-display font-black text-3xl tracking-tighter uppercase mt-2">Student Directory</h1>
-          <p className="text-sm text-muted-foreground mt-1">{list.length} of {all.length} students</p>
+          <p className="text-sm text-muted-foreground mt-1">{loading ? 'Loading…' : `${list.length} of ${all.length} students`}</p>
         </div>
         <div className="flex gap-2">
+          <button onClick={load} className="h-10 w-10 rounded-2xl bg-muted grid place-items-center" title="Refresh">
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
           <div className="flex bg-muted rounded-full p-1">
             <button onClick={() => setView('grid')} className={`px-3 py-1.5 rounded-full ${view === 'grid' ? 'bg-background shadow' : ''}`} data-testid="view-grid"><LayoutGrid className="h-3.5 w-3.5" /></button>
             <button onClick={() => setView('table')} className={`px-3 py-1.5 rounded-full ${view === 'table' ? 'bg-background shadow' : ''}`} data-testid="view-table"><List className="h-3.5 w-3.5" /></button>
           </div>
-          <button onClick={() => navigate('/dashboard/students/admission')} className="h-10 px-4 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center gap-2" data-testid="dir-add-btn">
+          <button onClick={() => navigate('/dashboard/students/admission-full')} className="h-10 px-4 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center gap-2" data-testid="dir-add-btn">
             <Plus className="h-3.5 w-3.5" />Add Student
           </button>
         </div>
@@ -58,9 +71,9 @@ export default function StudentDirectoryPage() {
           {SECTION_OPTIONS.map((c) => <option key={c}>{c}</option>)}
         </select>
         <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-10 px-3 rounded-2xl border border-border bg-card text-sm" data-testid="dir-status">
-          <option value="">All Status</option>
-          <option value="ACTIVE">Active</option>
-          <option value="INACTIVE">Inactive</option>
+          <option value="ACTIVE">Active Only</option>
+          <option value="">All Students</option>
+          <option value="REMOVED">Removed</option>
         </select>
         <select value={gender} onChange={(e) => setGender(e.target.value)} className="h-10 px-3 rounded-2xl border border-border bg-card text-sm col-span-2 md:col-span-1" data-testid="dir-gender">
           <option value="">All Genders</option>
@@ -68,7 +81,9 @@ export default function StudentDirectoryPage() {
         </select>
       </div>
 
-      {view === 'grid' ? (
+      {loading ? (
+        <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+      ) : view === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {list.map((s, i) => (
             <motion.button

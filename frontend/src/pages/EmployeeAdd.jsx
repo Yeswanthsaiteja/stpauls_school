@@ -1,123 +1,180 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Upload, Check } from 'lucide-react';
-import { demoStore } from '../services/demoStore';
-import { CLASS_OPTIONS } from '../lib/pdfUtils';
+import { Upload, Check, Loader2 } from 'lucide-react';
+import { addEmployee } from '../services/firebase/employeesService';
 import { toast } from 'sonner';
 
 const ROLES = ['Teacher', 'Class Teacher', 'Principal', 'Vice Principal', 'Accountant', 'Librarian', 'Lab Assistant', 'Administrative', 'Support Staff'];
 const DEPARTMENTS = ['Primary', 'Secondary', 'Commerce', 'Science', 'Arts', 'Administration', 'Other'];
 const EMP_TYPES = ['Permanent', 'Contract', 'Part-time'];
 
+// ─── Field & Select MUST live outside the parent component so React doesn't
+//     treat them as a new component type on every render (which causes remount
+//     and focus loss after every keystroke).
+function Field({ label, k, type = 'text', placeholder, full, value, onChange }) {
+  return (
+    <div className={full ? 'col-span-full' : ''}>
+      <label className="label-eyebrow text-muted-foreground">{label}</label>
+      <input
+        id={`emp-field-${k}`}
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+        autoComplete="off"
+        className="mt-1.5 w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary transition-colors"
+        data-testid={`emp-${k}`}
+      />
+    </div>
+  );
+}
+
+function SelectField({ label, k, options, value, onChange }) {
+  return (
+    <div>
+      <label className="label-eyebrow text-muted-foreground">{label}</label>
+      <select
+        id={`emp-select-${k}`}
+        value={value}
+        onChange={onChange}
+        className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm"
+        data-testid={`emp-${k}`}
+      >
+        {options.map((o) => <option key={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+}
+
 export default function EmployeeAdd() {
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    fullName: '', employeeId: `EMP${String(demoStore.list('employees').length + 1).padStart(3, '0')}`,
+    fullName: '', employeeId: '',
     dateOfBirth: '', gender: 'Male', phoneNumber: '', email: '', address: '',
     aadharNumber: '', panNumber: '', dateOfJoining: new Date().toISOString().slice(0, 10),
     employmentType: 'Permanent', role: 'Teacher', department: 'Primary',
-    subjects: '', classes: '', classTeacherOf: '',
     qualification: '', specialization: '', institution: '', qualYear: '',
     experience: 0, previousSchool: '',
     bankAccount: '', bankName: '', ifsc: '',
     basicSalary: 0, photoURL: '',
   });
   const navigate = useNavigate();
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const onPhoto = (e) => {
     const f = e.target.files?.[0]; if (!f) return;
-    const r = new FileReader(); r.onload = (ev) => set('photoURL', String(ev.target.result || '')); r.readAsDataURL(f);
+    const r = new FileReader(); r.onload = (ev) => setForm(prev => ({ ...prev, photoURL: String(ev.target.result || '') })); r.readAsDataURL(f);
   };
 
-  const submit = () => {
-    if (!form.fullName) return toast.error('Name required');
-    demoStore.add('employees', { ...form, status: 'ACTIVE' });
-    toast.success(`Employee ${form.employeeId} created`);
-    navigate('/dashboard/employees');
-  };
+  const submit = async () => {
+    if (!form.fullName.trim()) return toast.error('Full Name is required');
+    if (!form.phoneNumber.trim()) return toast.error('Phone number is required');
+    if (!form.dateOfBirth) return toast.error('Date of Birth is required');
+    if (!form.gender) return toast.error('Gender is required');
+    if (!form.address.trim()) return toast.error('Address is required');
+    if (!form.dateOfJoining) return toast.error('Date of Joining is required');
+    if (!form.employmentType) return toast.error('Employment Type is required');
+    if (!form.role) return toast.error('Role is required');
+    if (!form.department) return toast.error('Department is required');
 
-  const Field = ({ label, k, type = 'text', placeholder, full }) => (
-    <div className={full ? 'col-span-full' : ''}>
-      <label className="label-eyebrow text-muted-foreground">{label}</label>
-      <input type={type} placeholder={placeholder} value={form[k] || ''} onChange={(e) => set(k, e.target.value)} className="mt-1.5 w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary" data-testid={`emp-${k}`} />
-    </div>
-  );
-  const Select = ({ label, k, options }) => (
-    <div>
-      <label className="label-eyebrow text-muted-foreground">{label}</label>
-      <select value={form[k]} onChange={(e) => set(k, e.target.value)} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm" data-testid={`emp-${k}`}>
-        {options.map((o) => <option key={o}>{o}</option>)}
-      </select>
-    </div>
-  );
+    setSaving(true);
+    try {
+      const emp = await addEmployee({ ...form, designation: form.role, status: 'ACTIVE' });
+      toast.success(`Employee ${emp?.employeeId || form.fullName} created`);
+      navigate('/dashboard/employees');
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to create employee. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-4xl" data-testid="employee-add">
       <NavLink to="/dashboard/employees" className="label-eyebrow text-primary">← Back to Employees</NavLink>
       <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Add Employee</h1>
 
-      <div className="glass-morphism rounded-[2rem] p-6 space-y-5">
+      <form autoComplete="off" onSubmit={e => e.preventDefault()} className="glass-morphism rounded-[2rem] p-6 space-y-5">
+
+        {/* ── Identification ── */}
         <div>
-          <div className="label-eyebrow text-muted-foreground mb-3">Identification</div>
+          <div className="label-eyebrow text-muted-foreground mb-3 font-semibold">Identification (Fields marked * are required)</div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Field label="Full Name" k="fullName" />
-            <Field label="Employee ID" k="employeeId" />
-            <Field label="Date of Birth" k="dateOfBirth" type="date" />
-            <Select label="Gender" k="gender" options={['Male', 'Female', 'Other']} />
-            <Field label="Phone" k="phoneNumber" />
-            <Field label="Email" k="email" type="email" />
-            <Field label="Aadhar" k="aadharNumber" />
-            <Field label="PAN" k="panNumber" />
-            <Field label="Address" k="address" full />
+            <Field label="Full Name *" k="fullName" value={form.fullName} onChange={set('fullName')} />
+            <Field label="Employee ID" k="employeeId" placeholder="Auto-generated if blank" value={form.employeeId} onChange={set('employeeId')} />
+            <Field label="Date of Birth *" k="dateOfBirth" type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} />
+            <SelectField label="Gender *" k="gender" options={['Male', 'Female', 'Other']} value={form.gender} onChange={set('gender')} />
+            <Field label="Phone *" k="phoneNumber" value={form.phoneNumber} onChange={set('phoneNumber')} />
+            <Field label="Email" k="email" type="email" value={form.email} onChange={set('email')} />
+            <Field label="Aadhar" k="aadharNumber" value={form.aadharNumber} onChange={set('aadharNumber')} />
+            <Field label="PAN" k="panNumber" value={form.panNumber} onChange={set('panNumber')} />
+            <Field label="Address *" k="address" full value={form.address} onChange={set('address')} />
           </div>
         </div>
 
+        {/* ── Role & Department ── */}
         <div>
-          <div className="label-eyebrow text-muted-foreground mb-3">Role & Department</div>
+          <div className="label-eyebrow text-muted-foreground mb-3 font-semibold">Role & Department</div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Field label="Date of Joining" k="dateOfJoining" type="date" />
-            <Select label="Employment Type" k="employmentType" options={EMP_TYPES} />
-            <Select label="Role" k="role" options={ROLES} />
-            <Select label="Department" k="department" options={DEPARTMENTS} />
-            <Field label="Subjects (comma)" k="subjects" placeholder="Math, Science" />
-            <Field label="Classes (comma)" k="classes" placeholder="5th, 6th" />
-            <Field label="Class Teacher Of" k="classTeacherOf" placeholder="5-A" />
-            <Field label="Experience (yrs)" k="experience" type="number" />
-            <Field label="Previous School" k="previousSchool" />
+            <Field label="Date of Joining *" k="dateOfJoining" type="date" value={form.dateOfJoining} onChange={set('dateOfJoining')} />
+            <SelectField label="Employment Type *" k="employmentType" options={EMP_TYPES} value={form.employmentType} onChange={set('employmentType')} />
+            <SelectField label="Role *" k="role" options={ROLES} value={form.role} onChange={set('role')} />
+            <SelectField label="Department *" k="department" options={DEPARTMENTS} value={form.department} onChange={set('department')} />
+            <Field label="Experience (yrs)" k="experience" type="number" value={form.experience} onChange={set('experience')} />
+            <Field label="Previous School" k="previousSchool" value={form.previousSchool} onChange={set('previousSchool')} />
           </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            ℹ️ Classes & subjects are auto-derived from Academic → Classes & Subjects. No need to enter them here.
+          </p>
         </div>
 
+        {/* ── Qualification ── */}
         <div>
           <div className="label-eyebrow text-muted-foreground mb-3">Qualification</div>
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <Field label="Degree" k="qualification" />
-            <Field label="Specialization" k="specialization" />
-            <Field label="Institution" k="institution" />
-            <Field label="Year" k="qualYear" type="number" />
+            <Field label="Degree" k="qualification" value={form.qualification} onChange={set('qualification')} />
+            <Field label="Specialization" k="specialization" value={form.specialization} onChange={set('specialization')} />
+            <Field label="Institution" k="institution" value={form.institution} onChange={set('institution')} />
+            <Field label="Year" k="qualYear" type="number" value={form.qualYear} onChange={set('qualYear')} />
           </div>
         </div>
 
+        {/* ── Bank & Salary ── */}
         <div>
           <div className="label-eyebrow text-muted-foreground mb-3">Bank & Salary</div>
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <Field label="Bank Account No." k="bankAccount" />
-            <Field label="Bank & Branch" k="bankName" />
-            <Field label="IFSC" k="ifsc" />
-            <Field label="Basic Salary (₹)" k="basicSalary" type="number" />
+            <Field label="Bank Account No." k="bankAccount" value={form.bankAccount} onChange={set('bankAccount')} />
+            <Field label="Bank & Branch" k="bankName" value={form.bankName} onChange={set('bankName')} />
+            <Field label="IFSC" k="ifsc" value={form.ifsc} onChange={set('ifsc')} />
+            <Field label="Basic Salary (₹)" k="basicSalary" type="number" value={form.basicSalary} onChange={set('basicSalary')} />
           </div>
         </div>
 
+        {/* ── Photo ── */}
         <div>
           <div className="label-eyebrow text-muted-foreground mb-3">Photo</div>
-          <label className="block border-2 border-dashed border-border rounded-2xl p-4 cursor-pointer hover:border-primary text-center">
+          <label className="block border-2 border-dashed border-border rounded-2xl p-4 cursor-pointer hover:border-primary text-center transition-colors">
             <input type="file" accept="image/*" onChange={onPhoto} className="hidden" data-testid="emp-photo" />
-            {form.photoURL ? <img src={form.photoURL} alt="" className="h-24 w-24 object-cover mx-auto rounded-2xl" /> : <><Upload className="h-6 w-6 mx-auto text-muted-foreground" /><div className="label-eyebrow text-muted-foreground mt-1">Upload Photo</div></>}
+            {form.photoURL
+              ? <img src={form.photoURL} alt="" className="h-24 w-24 object-cover mx-auto rounded-2xl" />
+              : <><Upload className="h-6 w-6 mx-auto text-muted-foreground" /><div className="label-eyebrow text-muted-foreground mt-1">Upload Photo</div></>
+            }
           </label>
         </div>
 
-        <button onClick={submit} className="h-11 px-5 rounded-2xl bg-emerald-500 text-white label-eyebrow flex items-center gap-2" data-testid="emp-submit"><Check className="h-3.5 w-3.5" />Create Employee</button>
-      </div>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={saving}
+          className="h-11 px-6 rounded-2xl bg-emerald-500 text-white label-eyebrow flex items-center gap-2 disabled:opacity-60 hover:bg-emerald-600 transition-colors"
+          data-testid="emp-submit"
+        >
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+          Create Employee
+        </button>
+      </form>
     </div>
   );
 }

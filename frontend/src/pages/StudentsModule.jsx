@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Users, FilePlus2, UserMinus2, Award, MessageCircle, Search, Upload } from 'lucide-react';
+import { Users, FilePlus2, UserMinus2, Award, MessageCircle, Search, Upload, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { demoStore, newAdmissionNo } from '../services/demoStore';
+import { listStudents, addStudent, searchStudents } from '../services/firebase/studentsService';
 import { getWhatsAppUrl } from '../lib/utils';
 import { toast } from 'sonner';
 
@@ -11,7 +11,8 @@ const STEPS = ['Personal', 'Contact', 'Parent Info', 'Academic', 'Photo'];
 
 function Landing() {
   const navigate = useNavigate();
-  const recents = demoStore.list('students').slice(0, 5);
+  const [recents, setRecents] = useState([]);
+  useEffect(() => { listStudents({ status: 'ACTIVE' }).then((s) => setRecents(s.slice(0, 5))); }, []);
   const cards = [
     { icon: Users, label: 'Student Directory', sub: 'Browse · search · filter', to: '/dashboard/students/directory', color: 'from-indigo-500 to-violet-500' },
     { icon: FilePlus2, label: 'Admission Form', sub: 'Multi-step wizard', to: '/dashboard/students/admission-full', color: 'from-emerald-500 to-teal-500' },
@@ -99,18 +100,20 @@ function AdmissionForm() {
     reader.readAsDataURL(file);
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!data.firstName || !data.lastName) return toast.error('Name required');
-    const admissionNo = newAdmissionNo();
-    demoStore.add('students', {
-      ...data,
-      fullName: `${data.firstName} ${data.lastName}`,
-      admissionNo,
-      status: 'ACTIVE',
-      admissionDate: new Date().toISOString(),
-    });
-    toast.success(`Admission created: ${admissionNo}`);
-    navigate('..');
+    try {
+      const result = await addStudent({
+        ...data,
+        fullName: `${data.firstName} ${data.lastName}`,
+        status: 'ACTIVE',
+        admissionDate: new Date().toISOString(),
+      });
+      toast.success(`Admission created: ${result?.admissionNo || 'Saved'}`);
+      navigate('..');
+    } catch (e) {
+      toast.error('Failed to save admission. Please try again.');
+    }
   };
 
   const Field = ({ label, k, type = 'text', placeholder }) => (
@@ -208,7 +211,16 @@ function AdmissionForm() {
 
 function Directory() {
   const [q, setQ] = useState('');
-  const list = demoStore.list('students').filter((s) => s.fullName.toLowerCase().includes(q.toLowerCase()));
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    listStudents({ status: 'ACTIVE' }).then((s) => { setList(s); setLoading(false); });
+  }, []);
+
+  const filtered = q ? list.filter((s) => s.fullName?.toLowerCase().includes(q.toLowerCase())) : list;
+
   return (
     <div className="space-y-5" data-testid="student-directory">
       <NavLink to=".." className="label-eyebrow text-primary">← Back</NavLink>
@@ -217,10 +229,11 @@ function Directory() {
         <Search className="h-4 w-4 text-muted-foreground ml-3" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search students…" className="flex-1 h-10 bg-transparent outline-none text-sm" data-testid="directory-search" />
       </div>
+      {loading && <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {list.map((s) => (
+        {filtered.map((s) => (
           <motion.div key={s.id} whileHover={{ y: -3 }} className="glass-morphism rounded-[1.75rem] p-4 flex items-center gap-3">
-            <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center text-white font-black">{s.firstName[0]}</div>
+            <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center text-white font-black">{s.firstName?.[0]}</div>
             <div className="flex-1">
               <div className="font-bold text-sm">{s.fullName}</div>
               <div className="label-eyebrow text-muted-foreground">{s.admissionNo} · {s.className}-{s.section}</div>

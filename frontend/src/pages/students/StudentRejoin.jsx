@@ -1,39 +1,53 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { Search, RefreshCcw } from 'lucide-react';
-import { demoStore, newAdmissionNo } from '../../services/demoStore';
+import { listStudents, updateStudent } from '../../services/firebase/studentsService';
 import { CLASS_OPTIONS, SECTION_OPTIONS } from '../../lib/pdfUtils';
 import { toast } from 'sonner';
 
 export default function StudentRejoin() {
-  const inactive = demoStore.list('students').filter((s) => s.status === 'INACTIVE');
+  const navigate = useNavigate();
+  const [inactive, setInactive] = useState([]);
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     rejoinDate: new Date().toISOString().slice(0, 10),
-    className: '5th', section: 'A',
-    academicYear: '2025-26', reason: 'Returned after family relocation', newAdmissionNo: '',
-    keepOldAdm: true,
+    className: '', section: 'A',
+    academicYear: new Date().getFullYear() + '-' + String(new Date().getFullYear() + 1).slice(2),
+    reason: 'Returned after family relocation',
+    newAdmissionNo: '', keepOldAdm: true,
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  // When a student is picked, pre-fill their original class/section
+  const handlePick = (s) => {
+    setPicked(s);
+    setForm(f => ({ ...f, className: s.className || '', section: s.section || 'A' }));
+  };
+
+  useEffect(() => {
+    listStudents({ status: 'REMOVED' }).then(setInactive);
+  }, []);
+
   const matches = inactive.filter((s) => q && `${s.fullName} ${s.admissionNo}`.toLowerCase().includes(q.toLowerCase())).slice(0, 8);
 
-  const confirm = () => {
+  const confirm = async () => {
     if (!picked) return;
-    const admNo = form.keepOldAdm ? picked.admissionNo : (form.newAdmissionNo || newAdmissionNo());
-    demoStore.update('students', picked.id, {
-      status: 'ACTIVE',
-      admissionNo: admNo,
-      className: form.className,
-      section: form.section,
-      academicYear: form.academicYear,
-      rejoinDate: form.rejoinDate,
-      rejoinReason: form.reason,
-      admissionType: 'Rejoining',
+    setSaving(true);
+    const admNo = form.keepOldAdm ? picked.admissionNo : (form.newAdmissionNo || `STP${Date.now().toString().slice(-6)}`);
+    await updateStudent(picked.id, {
+      status: 'ACTIVE', admissionNo: admNo,
+      className: form.className, section: form.section,
+      academicYear: form.academicYear, rejoinDate: form.rejoinDate,
+      rejoinReason: form.reason, admissionType: 'Rejoining',
     });
     toast.success(`${picked.fullName} reactivated · ${admNo} · ${form.className}-${form.section}`);
+    setInactive((list) => list.filter((s) => s.id !== picked.id));
     setPicked(null); setQ('');
+    setSaving(false);
+    setTimeout(() => navigate('/dashboard/students/directory'), 800);
   };
 
   return (
@@ -42,7 +56,7 @@ export default function StudentRejoin() {
       <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Student Rejoin</h1>
 
       <div className="glass-morphism rounded-[2rem] p-5">
-        <label className="label-eyebrow text-muted-foreground">Find Inactive Student ({inactive.length} on record)</label>
+        <label className="label-eyebrow text-muted-foreground">Find Removed Student ({inactive.length} on record)</label>
         <div className="mt-1.5 flex items-center gap-2 px-3 h-11 rounded-2xl border border-border bg-card">
           <Search className="h-4 w-4 text-muted-foreground" />
           <input value={q} onChange={(e) => { setQ(e.target.value); setPicked(null); }} placeholder="Search by name or admission number…" className="flex-1 bg-transparent outline-none text-sm" data-testid="rejoin-search" />
@@ -51,7 +65,7 @@ export default function StudentRejoin() {
           <div className="mt-3 space-y-2">
             {matches.length === 0 && <div className="text-sm text-muted-foreground py-2">No inactive student found</div>}
             {matches.map((s) => (
-              <button key={s.id} onClick={() => setPicked(s)} className="w-full text-left p-3 rounded-2xl bg-muted/30 hover:bg-muted/60 flex items-center gap-3" data-testid={`rejoin-pick-${s.id}`}>
+              <button key={s.id} onClick={() => handlePick(s)} className="w-full text-left p-3 rounded-2xl bg-muted/30 hover:bg-muted/60 flex items-center gap-3" data-testid={`rejoin-pick-${s.id}`}>
                 <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-slate-500 to-slate-700 grid place-items-center text-white font-black text-sm">{s.firstName[0]}</div>
                 <div className="flex-1">
                   <div className="font-bold text-sm">{s.fullName}</div>
@@ -112,7 +126,7 @@ export default function StudentRejoin() {
 
           <div className="flex gap-3 pt-2">
             <button onClick={() => setPicked(null)} className="h-11 px-5 rounded-2xl bg-muted label-eyebrow">Cancel</button>
-            <button onClick={confirm} className="h-11 px-5 rounded-2xl bg-emerald-500 text-white label-eyebrow" data-testid="rejoin-confirm">Confirm Rejoin</button>
+            <button onClick={confirm} disabled={saving} className="h-11 px-5 rounded-2xl bg-emerald-500 text-white label-eyebrow disabled:opacity-60" data-testid="rejoin-confirm">{saving ? 'Saving…' : 'Confirm Rejoin'}</button>
           </div>
         </motion.div>
       )}

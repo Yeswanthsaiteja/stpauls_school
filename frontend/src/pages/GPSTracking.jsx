@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { NavLink } from 'react-router-dom';
 import { MapPin, Bus, Navigation, Phone } from 'lucide-react';
-import { demoStore } from '../services/demoStore';
+
 
 export default function GPSTracking() {
-  const routes = demoStore.list('transportRoutes');
+  const [routes, setRoutes] = React.useState([]); React.useEffect(() => { import('../services/firebase/operationsService').then(m => m.listTransportRoutes().then(setRoutes)); }, []);
   const [active, setActive] = useState(routes[0]);
   const [pos, setPos] = useState({ x: 30, y: 50 });
 

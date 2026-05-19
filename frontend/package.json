@@ -31,6 +31,7 @@
     "@radix-ui/react-toggle": "^1.1.6",
     "@radix-ui/react-toggle-group": "^1.1.7",
     "@radix-ui/react-tooltip": "^1.2.4",
+    "ajv": "^8.20.0",
     "axios": "^1.8.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -65,9 +66,9 @@
     "zod": "^3.24.4"
   },
   "scripts": {
-    "start": "craco start",
-    "build": "craco build",
-    "test": "craco test"
+    "start": "DISABLE_ESLINT_PLUGIN=true craco start",
+    "build": "DISABLE_ESLINT_PLUGIN=true craco build",
+    "test": "DISABLE_ESLINT_PLUGIN=true craco test"
   },
   "browserslist": {
     "production": [

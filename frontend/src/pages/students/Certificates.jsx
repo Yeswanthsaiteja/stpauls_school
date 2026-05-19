@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { NavLink, useSearchParams } from 'react-router-dom';
-import { Search, Award, Download, Eye } from 'lucide-react';
-import { demoStore } from '../../services/demoStore';
+import { Search, Award, Download, Eye, Loader2 } from 'lucide-react';
+import { listStudents } from '../../services/firebase/studentsService';
+import { pdfAPI, aiAPI } from '../../services/api';
 import { useTenant } from '../../contexts/TenantContext';
 import { downloadElementAsPDF } from '../../lib/pdfUtils';
 import { toast } from 'sonner';
@@ -28,7 +29,7 @@ const TEMPLATES = {
 export default function Certificates() {
   const [searchParams] = useSearchParams();
   const presetId = searchParams.get('studentId');
-  const students = demoStore.list('students');
+  const [students, setStudents] = useState([]);
   const { tenant } = useTenant();
 
   const [q, setQ] = useState('');
@@ -37,15 +38,34 @@ export default function Certificates() {
   const [customBody, setCustomBody] = useState('');
   const [issueDate, setIssueDate] = useState(new Date().toLocaleDateString('en-IN'));
   const [refNo, setRefNo] = useState(`REF-${Date.now().toString().slice(-6)}`);
+  const [generating, setGenerating] = useState(false);
+
+  useEffect(() => {
+    listStudents({ status: 'ACTIVE' }).then(setStudents);
+  }, []);
 
   const matches = students.filter((s) => q && `${s.fullName} ${s.admissionNo}`.toLowerCase().includes(q.toLowerCase())).slice(0, 6);
   const student = students.find((s) => s.id === studentId);
-  const body = customBody || (student ? TEMPLATES[type](student, tenant || { name: 'School' }, issueDate) : '');
+  const body = customBody || (student ? TEMPLATES[type]?.(student, tenant || { name: 'School' }, issueDate) : '');
 
   const generate = async () => {
     if (!student) return toast.error('Pick a student');
-    await downloadElementAsPDF('cert-preview', `${type.replace(/\s+/g, '_')}_${student.admissionNo}.pdf`);
-    toast.success('Certificate downloaded');
+    setGenerating(true);
+    try {
+      // Try server-side PDF from FastAPI first
+      const certType = type.includes('Transfer') ? 'TC' : 'BONAFIDE';
+      const { data } = await pdfAPI.getCertificate({ type: certType, studentId: student.id, aiText: customBody || body });
+      const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }));
+      const a = document.createElement('a'); a.href = url; a.download = `${type.replace(/\s+/g, '_')}_${student.admissionNo}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Certificate downloaded');
+    } catch {
+      // Fallback: client-side PDF from DOM preview
+      await downloadElementAsPDF('cert-preview', `${type.replace(/\s+/g, '_')}_${student.admissionNo}.pdf`);
+      toast.success('Certificate downloaded (client-side)');
+    } finally {
+      setGenerating(false);
+    }
   };
 
   return (
@@ -89,8 +109,8 @@ export default function Certificates() {
               <label className="label-eyebrow text-muted-foreground">Body (editable)</label>
               <textarea value={customBody || body} onChange={(e) => setCustomBody(e.target.value)} rows={5} className="mt-1.5 w-full px-3 py-2 rounded-2xl border border-border bg-card text-sm" data-testid="cert-body" />
             </div>
-            <button onClick={generate} className="h-11 w-full rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center justify-center gap-2" data-testid="cert-generate">
-              <Download className="h-3.5 w-3.5" />Generate PDF
+            <button onClick={generate} disabled={generating} className="h-11 w-full rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center justify-center gap-2 disabled:opacity-60" data-testid="cert-generate">
+              {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}Generate PDF
             </button>
           </div>
         </div>
