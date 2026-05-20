@@ -8,9 +8,61 @@ from middleware.firebase_auth import require_auth
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# ─── In-memory OTP store: mobile → {otp, expires_at, attempts} ───────────────
-# For production scale, replace with Redis.
-_otp_store: Dict[str, dict] = {}
+# ─── OTP helpers: Firestore-backed with in-memory fallback ───────────────────
+# Primary store is Firestore (survives restarts, works across multiple servers).
+# Falls back to the in-memory dict when Firebase is unavailable (dev / test).
+_otp_fallback: Dict[str, dict] = {}
+_OTP_COLLECTION = "otp_store"
+
+
+def _firestore_client():
+    """Return an initialised Firestore client, or None if not available."""
+    try:
+        import firebase_admin
+        if not firebase_admin._apps:
+            from firebase_admin import credentials
+            cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+            if cred_path and os.path.exists(cred_path):
+                firebase_admin.initialize_app(credentials.Certificate(cred_path))
+            else:
+                firebase_admin.initialize_app(credentials.ApplicationDefault())
+        from firebase_admin import firestore
+        return firestore.client()
+    except Exception as exc:
+        logger.warning("Firestore unavailable for OTP store: %s", exc)
+        return None
+
+
+def _otp_set(mobile: str, record: dict) -> None:
+    db = _firestore_client()
+    if db:
+        try:
+            db.collection(_OTP_COLLECTION).document(mobile).set(record)
+            return
+        except Exception as exc:
+            logger.warning("Firestore OTP write failed, using in-memory: %s", exc)
+    _otp_fallback[mobile] = record
+
+
+def _otp_get(mobile: str) -> Optional[dict]:
+    db = _firestore_client()
+    if db:
+        try:
+            doc = db.collection(_OTP_COLLECTION).document(mobile).get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as exc:
+            logger.warning("Firestore OTP read failed, using in-memory: %s", exc)
+    return _otp_fallback.get(mobile)
+
+
+def _otp_delete(mobile: str) -> None:
+    db = _firestore_client()
+    if db:
+        try:
+            db.collection(_OTP_COLLECTION).document(mobile).delete()
+        except Exception as exc:
+            logger.warning("Firestore OTP delete failed, using in-memory: %s", exc)
+    _otp_fallback.pop(mobile, None)
 
 
 class WhatsAppMessage(BaseModel):
@@ -76,11 +128,11 @@ async def send_otp(payload: OtpRequest):
     mobile10 = mobile[-10:]   # last 10 digits — used by Fast2SMS
 
     otp = str(secrets.randbelow(900000) + 100000)   # cryptographically random 6-digit
-    _otp_store[mobile] = {
+    _otp_set(mobile, {
         "otp": otp,
         "expires_at": time.time() + 600,   # 10 minutes
         "attempts": 0,
-    }
+    })
 
     import requests as req
 
@@ -147,7 +199,7 @@ async def send_otp(payload: OtpRequest):
             return {"success": True}
         except Exception as e:
             logger.exception("MSG91 OTP send failed for %s: %s", mobile, e)
-            raise HTTPException(status_code=500, detail=f"SMS delivery failed: {e}. Please try again.")
+            raise HTTPException(status_code=500, detail="OTP delivery failed. Please try again later.")
 
     # ── No SMS provider configured — dev mode ─────────────────────────────────
     logger.warning("[DEV] No SMS provider configured. OTP for %s: %s", mobile, otp)
@@ -159,19 +211,22 @@ async def send_otp(payload: OtpRequest):
 @router.post("/verify-otp")
 async def verify_otp(payload: OtpVerifyRequest):
     mobile = _normalise_mobile(payload.phone)
-    stored = _otp_store.get(mobile)
+    stored = _otp_get(mobile)
 
     if not stored:
         raise HTTPException(status_code=400, detail="OTP not found or already used. Please request a new OTP.")
 
     if time.time() > stored["expires_at"]:
-        _otp_store.pop(mobile, None)
+        _otp_delete(mobile)
         raise HTTPException(status_code=400, detail="OTP has expired. Please request a new OTP.")
 
     stored["attempts"] += 1
     if stored["attempts"] > 5:
-        _otp_store.pop(mobile, None)
+        _otp_delete(mobile)
         raise HTTPException(status_code=429, detail="Too many incorrect attempts. Please request a new OTP.")
+
+    # Persist updated attempt count before checking correctness
+    _otp_set(mobile, stored)
 
     if stored["otp"] != payload.otp.strip():
         remaining = 5 - stored["attempts"]
@@ -180,7 +235,7 @@ async def verify_otp(payload: OtpVerifyRequest):
             detail=f"Incorrect OTP. {remaining} attempt(s) remaining."
         )
 
-    _otp_store.pop(mobile, None)   # consume OTP
+    _otp_delete(mobile)   # consume OTP
     return {"success": True, "verified": True, "phone": f"+{mobile}"}
 
 
@@ -203,7 +258,7 @@ async def send_whatsapp(payload: WhatsAppMessage, user=Depends(require_auth)):
         return {"success": True, "response": resp.json()}
     except Exception as e:
         logger.exception("MSG91 WhatsApp send failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to send WhatsApp message. Please try again later.")
 
 
 @router.post("/sms")
@@ -225,7 +280,7 @@ async def send_sms(payload: WhatsAppMessage, user=Depends(require_auth)):
         return {"success": True, "response": resp.json()}
     except Exception as e:
         logger.exception("MSG91 SMS send failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to send SMS. Please try again later.")
 
 
 @router.post("/bulk")
@@ -238,7 +293,7 @@ async def send_bulk(payload: BulkMessage, user=Depends(require_auth)):
             result = await send_whatsapp(msg, user)
             results.append({"phone": phone, "success": True})
         except Exception as e:
-            results.append({"phone": phone, "success": False, "error": str(e)})
+            results.append({"phone": phone, "success": False, "error": "Message delivery failed."})
     sent = sum(1 for r in results if r["success"])
     return {"total": len(results), "sent": sent, "failed": len(results) - sent, "results": results}
 

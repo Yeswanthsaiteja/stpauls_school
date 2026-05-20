@@ -1,13 +1,16 @@
 """routers/attendance.py — Attendance CRUD and summaries via Firestore Admin SDK"""
-import os, logging
+import os, logging, re
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, Dict
 from middleware.firebase_auth import require_auth, optional_auth
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 TENANT_ID = os.environ.get("TENANT_ID", "stpauls")
+
+_VALID_ATTENDANCE_STATUSES = {"PRESENT", "ABSENT", "LATE"}
 
 
 def fs():
@@ -21,6 +24,31 @@ class AttendanceSave(BaseModel):
     date: str                    # YYYY-MM-DD
     records: Dict[str, str]      # { studentId: "PRESENT"|"ABSENT"|"LATE" }
     markedBy: Optional[str] = ""
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def validate_date(cls, v: str) -> str:
+        try:
+            datetime.strptime(v.strip(), "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("Attendance date must be in YYYY-MM-DD format.")
+        return v.strip()
+
+    @field_validator("records", mode="before")
+    @classmethod
+    def validate_records(cls, v: Dict[str, str]) -> Dict[str, str]:
+        invalid = {
+            sid: status
+            for sid, status in v.items()
+            if status not in _VALID_ATTENDANCE_STATUSES
+        }
+        if invalid:
+            bad_entries = ", ".join(f"{sid}='{s}'" for sid, s in list(invalid.items())[:5])
+            raise ValueError(
+                f"Invalid attendance status for: {bad_entries}. "
+                f"Allowed values are: {', '.join(sorted(_VALID_ATTENDANCE_STATUSES))}."
+            )
+        return v
 
 
 # ─── Get attendance for a class + date ────────────────────────────────────────
@@ -44,7 +72,7 @@ async def get_attendance(class_name: str, section: str, date: str, _user=Depends
         }
     except Exception as e:
         logger.exception("Get attendance error: %s", e)
-        return {"records": {}, "exists": False, "error": str(e)}
+        return {"records": {}, "exists": False, "error": "An error occurred while fetching attendance."}
 
 
 # ─── Save attendance ──────────────────────────────────────────────────────────
@@ -79,9 +107,11 @@ async def save_attendance(payload: AttendanceSave, user=Depends(require_auth)):
             "absent": absent,
             "late": late,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Save attendance error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to save attendance. Please try again.")
 
 
 # ─── Class attendance summary (last 30 days) ──────────────────────────────────
@@ -120,7 +150,7 @@ async def attendance_summary(class_name: str, section: str, _user=Depends(option
         }
     except Exception as e:
         logger.exception("Attendance summary error: %s", e)
-        return {"totalDays": 0, "avgPresent": 0, "avgAbsent": 0, "records": [], "error": str(e)}
+        return {"totalDays": 0, "avgPresent": 0, "avgAbsent": 0, "records": [], "error": "An error occurred while fetching the attendance summary."}
 
 
 # ─── Student attendance history ────────────────────────────────────────────────
@@ -176,4 +206,4 @@ async def student_attendance_history(
         }
     except Exception as e:
         logger.exception("Student attendance history error: %s", e)
-        return {"total": 0, "present": 0, "absent": 0, "records": [], "error": str(e)}
+        return {"total": 0, "present": 0, "absent": 0, "records": [], "error": "An error occurred while fetching the student's attendance history."}

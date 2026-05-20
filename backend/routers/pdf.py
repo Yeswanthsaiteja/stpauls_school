@@ -20,6 +20,29 @@ def get_firestore():
     return firestore.client()
 
 
+def _fit_text(canvas_obj, text: str, x: float, y: float, max_width: float, font: str, size: int) -> None:
+    """Draw text, truncating with ellipsis if it exceeds max_width."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    canvas_obj.setFont(font, size)
+    while text and stringWidth(text, font, size) > max_width:
+        text = text[:-1]
+    if not text:
+        return
+    # Re-add ellipsis only when we actually truncated
+    canvas_obj.drawString(x, y, text)
+
+
+def _truncate(text: str, canvas_obj, font: str, size: int, max_width: float) -> str:
+    """Return text truncated with '…' to fit within max_width points."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    if stringWidth(text, font, size) <= max_width:
+        return text
+    ellipsis = "…"
+    while text and stringWidth(text + ellipsis, font, size) > max_width:
+        text = text[:-1]
+    return text + ellipsis
+
+
 def build_receipt_pdf(txn: dict) -> bytes:
     """Generate a fee receipt PDF using ReportLab."""
     try:
@@ -48,13 +71,18 @@ def build_receipt_pdf(txn: dict) -> bytes:
         c.setFillColor(colors.black)
         y = h - 58 * mm
         line_h = 8 * mm
+        label_x   = 10 * mm
+        value_x   = 60 * mm
+        value_max = w - value_x - 6 * mm   # available width for values
 
-        def row(label, value, bold_value=False):
+        def row(label: str, value: str, bold_value: bool = False) -> None:
             nonlocal y
+            font = "Helvetica-Bold" if bold_value else "Helvetica"
             c.setFont("Helvetica", 9)
-            c.drawString(10 * mm, y, label)
-            c.setFont("Helvetica-Bold" if bold_value else "Helvetica", 9)
-            c.drawString(60 * mm, y, str(value))
+            c.drawString(label_x, y, label)
+            c.setFont(font, 9)
+            safe_value = _truncate(str(value), c, font, 9, value_max)
+            c.drawString(value_x, y, safe_value)
             y -= line_h
 
         row("Receipt No:", txn.get("receiptNo", "—"))
@@ -107,7 +135,7 @@ async def get_receipt_pdf(txn_id: str, user=Depends(require_auth)):
         raise
     except Exception as e:
         logger.exception("Receipt PDF error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to generate receipt PDF. Please try again.")
 
 
 class CertificateRequest(BaseModel):
@@ -189,4 +217,4 @@ async def get_certificate_pdf(payload: CertificateRequest, user=Depends(require_
         raise
     except Exception as e:
         logger.exception("Certificate PDF error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to generate certificate PDF. Please try again.")

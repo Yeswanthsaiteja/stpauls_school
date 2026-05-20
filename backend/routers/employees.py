@@ -1,7 +1,8 @@
 """routers/employees.py — Full CRUD for employees + leave management"""
-import os, logging
+import os, logging, re
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from middleware.firebase_auth import require_auth, optional_auth
 
@@ -9,10 +10,42 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 TENANT_ID = os.environ.get("TENANT_ID", "stpauls")
 
+_VALID_EMP_STATUSES = {"ACTIVE", "INACTIVE"}
+_VALID_LEAVE_TYPES  = {"CASUAL", "SICK", "EARNED", "MATERNITY", "PATERNITY"}
+_VALID_LEAVE_STATUSES = {"APPROVED", "REJECTED"}
+
 
 def fs():
     from firebase_admin import firestore
     return firestore.client()
+
+
+def _validate_phone(v: Optional[str]) -> Optional[str]:
+    if not v:
+        return v
+    digits = re.sub(r"\D", "", v)
+    if len(digits) != 10:
+        raise ValueError("Phone number must be exactly 10 digits.")
+    return digits
+
+
+def _validate_email(v: Optional[str]) -> Optional[str]:
+    if not v:
+        return v
+    pattern = r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$"
+    if not re.match(pattern, v.strip()):
+        raise ValueError("Invalid email address format.")
+    return v.strip().lower()
+
+
+def _validate_date(v: Optional[str], field_name: str = "Date") -> Optional[str]:
+    if not v:
+        return v
+    try:
+        datetime.strptime(v.strip(), "%Y-%m-%d")
+    except ValueError:
+        raise ValueError(f"{field_name} must be in YYYY-MM-DD format.")
+    return v.strip()
 
 
 class EmployeeCreate(BaseModel):
@@ -33,6 +66,43 @@ class EmployeeCreate(BaseModel):
     ifsc: Optional[str] = ""
     status: Optional[str] = "ACTIVE"
 
+    @field_validator("fullName")
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Full name cannot be blank.")
+        return v.strip()
+
+    @field_validator("phoneNumber", mode="before")
+    @classmethod
+    def validate_phone(cls, v): return _validate_phone(v)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def validate_email(cls, v): return _validate_email(v)
+
+    @field_validator("dateOfBirth", mode="before")
+    @classmethod
+    def validate_dob(cls, v): return _validate_date(v, "Date of birth")
+
+    @field_validator("dateOfJoining", mode="before")
+    @classmethod
+    def validate_doj(cls, v): return _validate_date(v, "Date of joining")
+
+    @field_validator("salary", mode="before")
+    @classmethod
+    def validate_salary(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v < 0:
+            raise ValueError("Salary cannot be negative.")
+        return v
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def validate_status(cls, v: Optional[str]) -> Optional[str]:
+        if v and v not in _VALID_EMP_STATUSES:
+            raise ValueError(f"Status must be one of: {', '.join(sorted(_VALID_EMP_STATUSES))}.")
+        return v
+
 
 class EmployeeUpdate(BaseModel):
     fullName: Optional[str] = None
@@ -45,6 +115,28 @@ class EmployeeUpdate(BaseModel):
     salary: Optional[float] = None
     status: Optional[str] = None
 
+    @field_validator("phoneNumber", mode="before")
+    @classmethod
+    def validate_phone(cls, v): return _validate_phone(v)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def validate_email(cls, v): return _validate_email(v)
+
+    @field_validator("salary", mode="before")
+    @classmethod
+    def validate_salary(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v < 0:
+            raise ValueError("Salary cannot be negative.")
+        return v
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def validate_status(cls, v: Optional[str]) -> Optional[str]:
+        if v and v not in _VALID_EMP_STATUSES:
+            raise ValueError(f"Status must be one of: {', '.join(sorted(_VALID_EMP_STATUSES))}.")
+        return v
+
 
 class LeaveRequest(BaseModel):
     employeeId: str
@@ -55,10 +147,39 @@ class LeaveRequest(BaseModel):
     reason: str
     totalDays: Optional[int] = 1
 
+    @field_validator("leaveType")
+    @classmethod
+    def validate_leave_type(cls, v: str) -> str:
+        if v not in _VALID_LEAVE_TYPES:
+            raise ValueError(f"Leave type must be one of: {', '.join(sorted(_VALID_LEAVE_TYPES))}.")
+        return v
+
+    @field_validator("fromDate", "toDate", mode="before")
+    @classmethod
+    def validate_dates(cls, v: str) -> str:
+        result = _validate_date(v, "Leave date")
+        if result is None:
+            raise ValueError("Leave date is required.")
+        return result
+
+    @field_validator("totalDays", mode="before")
+    @classmethod
+    def validate_total_days(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 1:
+            raise ValueError("Total days must be at least 1.")
+        return v
+
 
 class LeaveStatusUpdate(BaseModel):
     status: str             # APPROVED | REJECTED
     remarks: Optional[str] = ""
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        if v not in _VALID_LEAVE_STATUSES:
+            raise ValueError(f"Status must be one of: {', '.join(sorted(_VALID_LEAVE_STATUSES))}.")
+        return v
 
 
 # ─── Employees ────────────────────────────────────────────────────────────────
@@ -80,7 +201,7 @@ async def list_employees(
         return {"employees": employees, "count": len(employees)}
     except Exception as e:
         logger.exception("List employees error: %s", e)
-        return {"employees": [], "count": 0, "error": str(e)}
+        return {"employees": [], "count": 0, "error": "An error occurred while fetching employees."}
 
 
 @router.get("/{employee_id}")
@@ -94,7 +215,8 @@ async def get_employee(employee_id: str, _user=Depends(optional_auth)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Get employee error: %s", e)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while fetching the employee.")
 
 
 @router.post("", status_code=201)
@@ -116,9 +238,11 @@ async def create_employee(payload: EmployeeCreate, user=Depends(require_auth)):
 
         ref = db.collection("employees").add(data)
         return {"id": ref[1].id, "employeeId": emp_id, **data}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Create employee error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to create employee. Please try again.")
 
 
 @router.patch("/{employee_id}")
@@ -131,7 +255,8 @@ async def update_employee(employee_id: str, payload: EmployeeUpdate, user=Depend
         db.collection("employees").document(employee_id).update(patch)
         return {"success": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Update employee error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to update employee. Please try again.")
 
 
 @router.delete("/{employee_id}")
@@ -145,7 +270,8 @@ async def deactivate_employee(employee_id: str, user=Depends(require_auth)):
         })
         return {"success": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Deactivate employee error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to deactivate employee. Please try again.")
 
 
 # ─── Leave Requests ───────────────────────────────────────────────────────────
@@ -182,7 +308,8 @@ async def submit_leave_request(payload: LeaveRequest, user=Depends(require_auth)
         ref = db.collection("leave_requests").add(data)
         return {"id": ref[1].id, **data}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Submit leave request error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to submit leave request. Please try again.")
 
 
 @router.patch("/leave/{leave_id}")
@@ -198,4 +325,5 @@ async def update_leave_status(leave_id: str, payload: LeaveStatusUpdate, user=De
         })
         return {"success": True, "status": payload.status}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Update leave status error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to update leave status. Please try again.")

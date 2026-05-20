@@ -1,5 +1,5 @@
 """routers/reports.py — Finance aggregation reports reading from Firestore via Admin SDK"""
-import os, logging, csv, io
+import os, logging, csv, io, calendar
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from typing import Optional
@@ -26,7 +26,13 @@ async def fee_summary(
         db = get_firestore()
         ref = db.collection("transactions").where("tenantId", "==", TENANT_ID)
         if month:
-            ref = ref.where("paymentDate", ">=", f"{month}-01").where("paymentDate", "<=", f"{month}-31")
+            try:
+                year, mon = map(int, month.split("-"))
+                last_day = calendar.monthrange(year, mon)[1]
+            except (ValueError, IndexError):
+                from fastapi import HTTPException
+                raise HTTPException(status_code=400, detail="Invalid month format. Use YYYY-MM.")
+            ref = ref.where("paymentDate", ">=", f"{month}-01").where("paymentDate", "<=", f"{month}-{last_day:02d}")
         docs = ref.stream()
 
         total = collected = pending = overdue = 0
@@ -149,4 +155,4 @@ async def export_csv(collection_name: str, user=Depends(require_auth)):
     except Exception as e:
         logger.exception("CSV export error: %s", e)
         from fastapi import HTTPException
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Export failed. Please try again later.")
