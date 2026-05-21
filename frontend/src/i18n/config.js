@@ -32,6 +32,7 @@ const en = {
   myClass: 'My Class',
   marks: 'Marks Entry',
   topics: 'Syllabus',
+  diary: 'Class Diary',
   leave: 'My Leave',
   messages: 'Messages',
   results: 'Results',

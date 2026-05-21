@@ -10,16 +10,23 @@ import { toast } from 'sonner';
 export default function Diary() {
   const { profile } = useAuth();
   const isParent = profile?.role === 'PARENT';
+  const isAdmin = profile?.role === 'SCHOOL_ADMIN';
+  // Staff: non-parent, non-admin
+  const isStaff = !isParent && !isAdmin;
+
+  // For parents: auto-filter to child's class
+  const parentClass = profile?.linkedStudentClass || profile?.linkedClassName || '';
+  const parentSection = profile?.section || profile?.linkedSection || '';
 
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [filterCls, setFilterCls] = useState(isParent ? profile?.linkedClassName || '' : '');
-  const [filterSec, setFilterSec] = useState(isParent ? profile?.linkedSection || '' : '');
+  const [filterCls, setFilterCls] = useState(isParent ? parentClass : '');
+  const [filterSec, setFilterSec] = useState(isParent ? parentSection : '');
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
-    className: '7th', section: 'A', note: '',
+    className: CLASS_OPTIONS[0] || '7th', section: 'A', note: '', homework: '',
     author: profile?.fullName || 'Teacher',
   });
 
@@ -74,6 +81,11 @@ export default function Diary() {
               <Plus className="h-3.5 w-3.5" />New Entry
             </button>
           )}
+          {isParent && parentClass && (
+            <span className="label-eyebrow text-muted-foreground px-3 py-1.5 rounded-full bg-muted">
+              Class {parentClass}{parentSection ? `-${parentSection}` : ''}
+            </span>
+          )}
         </div>
       </div>
 
@@ -101,10 +113,16 @@ export default function Diary() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <div className="font-bold text-sm">{d.author}</div>
-                  <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary label-eyebrow">{d.className}-{d.section}</span>
+                  <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary label-eyebrow">{d.className}{d.section ? `-${d.section}` : ''}</span>
                   <span className="label-eyebrow text-muted-foreground">{d.date}</span>
                 </div>
-                <p className="text-sm mt-1.5">{d.note}</p>
+                {d.note && <p className="text-sm mt-1.5">{d.note}</p>}
+                {d.homework && (
+                  <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                    <div className="label-eyebrow text-amber-600 mb-1">Homework</div>
+                    <p className="text-sm">{d.homework}</p>
+                  </div>
+                )}
               </div>
             </motion.div>
           ))}
@@ -130,10 +148,16 @@ export default function Diary() {
                 </select>
               </div>
               <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })}
-                placeholder="What should parents know today?" rows={4}
+                placeholder="What happened in class today? Syllabus covered, activities…" rows={3}
                 className="w-full px-4 py-2.5 rounded-2xl border border-border bg-background text-sm" />
+              <div>
+                <label className="label-eyebrow text-muted-foreground mb-1 block">Homework / Assignment</label>
+                <textarea value={form.homework || ''} onChange={(e) => setForm({ ...form, homework: e.target.value })}
+                  placeholder="Homework or assignment for tomorrow…" rows={2}
+                  className="w-full px-4 py-2.5 rounded-2xl border border-border bg-background text-sm" />
+              </div>
               <button onClick={post} disabled={saving} className="w-full h-11 rounded-2xl bg-primary text-primary-foreground label-eyebrow disabled:opacity-60">
-                {saving ? 'Saving to Firestore…' : 'Post Entry'}
+                {saving ? 'Saving…' : 'Post Entry'}
               </button>
             </div>
           </motion.div>

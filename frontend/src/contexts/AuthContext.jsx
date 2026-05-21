@@ -75,9 +75,13 @@ async function resolvePhoneAsRole(phone, loginRole) {
     try {
       const allStudents = await getDocs(collection(db, 'students'));
       console.log('[Auth] Checking', allStudents.docs.length, 'students for parent phone', digits10);
+      const matchedChildren = [];
+      let parentFullName = 'Parent';
+
       for (const d of allStudents.docs) {
         const s = d.data();
         if (s.tenantId && s.tenantId !== TENANT_ID) continue;
+        if (s.status === 'REMOVED') continue;
         for (const [field, nameField] of [
           ['fatherPhone', 'fatherName'],
           ['motherPhone', 'motherName'],
@@ -86,15 +90,27 @@ async function resolvePhoneAsRole(phone, loginRole) {
           const stored = (s[field] || '').replace(/\D/g, '').slice(-10);
           if (stored && stored === digits10) {
             console.log('[Auth] Parent match found in student:', s.fullName, 'via', field);
-            return {
-              role: 'PARENT', tenantId: TENANT_ID,
-              fullName: s[nameField] || 'Parent', phone,
-              linkedStudentId: d.id, linkedStudentName: s.fullName,
-              linkedStudentClass: s.className, section: s.section,
-              displayName: s[nameField] || 'Parent',
-            };
+            parentFullName = s[nameField] || 'Parent';
+            matchedChildren.push({
+              id: d.id, name: s.fullName,
+              className: s.className, section: s.section,
+              admissionNo: s.admissionNo,
+            });
+            break; // avoid double-adding same student via multiple phone fields
           }
         }
+      }
+
+      if (matchedChildren.length > 0) {
+        const primary = matchedChildren[0];
+        return {
+          role: 'PARENT', tenantId: TENANT_ID,
+          fullName: parentFullName, phone,
+          linkedStudentId: primary.id, linkedStudentName: primary.name,
+          linkedStudentClass: primary.className, section: primary.section,
+          linkedStudents: matchedChildren,
+          displayName: parentFullName,
+        };
       }
       console.warn('[Auth] No student found with parent phone:', digits10);
     } catch (e) {

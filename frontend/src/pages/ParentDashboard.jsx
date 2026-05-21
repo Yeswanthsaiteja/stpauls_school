@@ -23,6 +23,9 @@ import { listTickets, addTicket } from '../services/firebase/communicationServic
 import { listEmployees } from '../services/firebase/employeesService';
 import { listMessages, sendMessage } from '../services/firebase/communicationService';
 import { getWhatsAppUrl } from '../lib/utils';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { addNotification } from '../services/firebase/notificationsService';
 
 const MODULES = [
   { key: 'diary',         label: 'Diary',             icon: BookOpen,       color: 'bg-blue-500',    tint: 'bg-blue-500/10 text-blue-500' },
@@ -108,10 +111,23 @@ const Result = ({ studentId }) => {
   );
 };
 
+// ─── Razorpay UPI loader ──────────────────────────────────────────────────────
+async function loadRazorpayScript() {
+  return new Promise((resolve) => {
+    if (window.Razorpay) { resolve(true); return; }
+    const s = document.createElement('script');
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    s.onload = () => resolve(true);
+    s.onerror = () => resolve(false);
+    document.body.appendChild(s);
+  });
+}
+
 // ─── Finance page — loads from Firestore ─────────────────────────────────────
-const Finance = ({ studentId }) => {
+const Finance = ({ studentId, profile }) => {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [paying, setPaying] = useState(false);
 
   useEffect(() => {
     if (!studentId) { setLoading(false); return; }
@@ -121,6 +137,74 @@ const Finance = ({ studentId }) => {
   const paid    = list.filter(x => x.status === 'PAID').reduce((s, x) => s + (x.amount || 0), 0);
   const pending = list.filter(x => x.status === 'PENDING').reduce((s, x) => s + (x.amount || 0), 0);
 
+  const payUPI = async () => {
+    if (pending <= 0) return toast.error('No pending fees to pay');
+    setPaying(true);
+    try {
+      const loaded = await loadRazorpayScript();
+      if (!loaded) { toast.error('Failed to load payment gateway. Please try again.'); setPaying(false); return; }
+
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+      let orderId, amount;
+      try {
+        const res = await fetch(`${backendUrl}/api/payments/create-order`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount: pending, currency: 'INR', studentId }),
+        });
+        const data = await res.json();
+        orderId = data.id;
+        amount = data.amount;
+      } catch {
+        // If backend not available, use amount directly
+        orderId = null;
+        amount = pending * 100;
+      }
+
+      const options = {
+        key: process.env.REACT_APP_RAZORPAY_KEY_ID || '',
+        amount: amount || pending * 100,
+        currency: 'INR',
+        name: "St. Paul's High School",
+        description: `Fee Payment — ${profile?.linkedStudentName || 'Student'}`,
+        order_id: orderId || undefined,
+        method: { upi: true, card: false, netbanking: false, wallet: false, emi: false },
+        prefill: { contact: (profile?.phone || '').replace(/\D/g, '').slice(-10), name: profile?.fullName },
+        theme: { color: '#4f46e5' },
+        handler: async (response) => {
+          try {
+            await addDoc(collection(db, 'transactions'), {
+              studentId,
+              studentName: profile?.linkedStudentName,
+              amount: pending,
+              status: 'PAID',
+              paymentMode: 'UPI',
+              paymentId: response.razorpay_payment_id,
+              feeName: 'UPI Fee Payment',
+              tenantId: process.env.REACT_APP_TENANT_ID || 'stpauls',
+              paidAt: serverTimestamp(),
+            });
+            toast.success('Payment successful! Receipt recorded.');
+            listTransactions({ studentId }).then(r => setList(r));
+          } catch { toast.success('Payment successful!'); }
+        },
+        modal: { ondismiss: () => setPaying(false) },
+      };
+
+      if (!options.key) {
+        toast.error('Razorpay not configured. Please contact school admin to set up online payments.');
+        setPaying(false);
+        return;
+      }
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (e) {
+      toast.error('Payment failed: ' + e.message);
+    }
+    setPaying(false);
+  };
+
   return (
     <SimplePage title="Finance" testId="parent-finance">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
@@ -128,6 +212,19 @@ const Finance = ({ studentId }) => {
         <div className="p-4 rounded-2xl bg-amber-500/10"><div className="label-eyebrow text-amber-600">Pending</div><div className="font-display font-black text-2xl tracking-tighter">₹{pending.toLocaleString()}</div></div>
         <div className="p-4 rounded-2xl bg-rose-500/10"><div className="label-eyebrow text-rose-600">Overdue</div><div className="font-display font-black text-2xl tracking-tighter">₹0</div></div>
       </div>
+
+      {/* UPI Pay button */}
+      {pending > 0 && (
+        <button onClick={payUPI} disabled={paying}
+          className="w-full mb-5 py-3 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-black label-eyebrow flex items-center justify-center gap-2 disabled:opacity-60">
+          {paying ? (
+            <><RefreshCw className="h-4 w-4 animate-spin" />Opening payment…</>
+          ) : (
+            <>Pay ₹{pending.toLocaleString()} via UPI</>
+          )}
+        </button>
+      )}
+
       {loading ? <div className="text-center text-muted-foreground py-4">Loading…</div> :
         list.length === 0 ? <div className="text-center text-muted-foreground py-4">No fee records found</div> :
         <div className="space-y-2">
@@ -135,7 +232,7 @@ const Finance = ({ studentId }) => {
             <div key={t.id || i} className="flex items-center justify-between p-3 rounded-2xl border border-border">
               <div>
                 <div className="font-bold text-sm">{t.feeName || t.description || 'Fee'}</div>
-                <div className="label-eyebrow text-muted-foreground">{t.receiptNo}</div>
+                <div className="label-eyebrow text-muted-foreground">{t.receiptNo} {t.paymentMode ? `· ${t.paymentMode}` : ''}</div>
               </div>
               <div className="flex items-center gap-3">
                 <div className="font-display font-black tracking-tighter">₹{(t.amount || 0).toLocaleString()}</div>
@@ -230,7 +327,11 @@ const Support = ({ profile }) => {
 
   useEffect(() => {
     listTickets().then(all => {
-      setTickets(all.filter(t => t.raisedBy === profile?.phone || t.parentName === profile?.fullName || t.studentName === profile?.linkedStudentName));
+      const myPhone = (profile?.phone || '').replace(/\D/g, '').slice(-10);
+      setTickets(all.filter(t => {
+        const tPhone = (t.raisedBy || '').replace(/\D/g, '').slice(-10);
+        return tPhone === myPhone || t.parentName === profile?.fullName || t.studentName === profile?.linkedStudentName;
+      }));
       setLoading(false);
     });
   }, [profile]);
@@ -241,12 +342,21 @@ const Support = ({ profile }) => {
     const ticket = await addTicket({
       ...form, raisedBy: profile?.phone, parentName: profile?.fullName,
       studentName: profile?.linkedStudentName, studentId: profile?.linkedStudentId,
-      ticketNo: `TKT${Date.now().toString().slice(-5)}`,
+      createdByName: profile?.fullName,
     });
     if (ticket) {
       setTickets(p => [ticket, ...p]);
       toast.success(`Ticket ${ticket.ticketNo} raised`);
       setShowForm(false); setForm({ title: '', description: '', priority: 'MEDIUM', category: 'General' });
+      // Notify admin
+      try {
+        await addNotification({
+          userId: 'admin',
+          type: 'crm_ticket',
+          title: `New Support Ticket: ${ticket.ticketNo}`,
+          body: `${profile?.fullName || 'Parent'}: "${form.title}" — ${form.category} · ${form.priority} priority`,
+        });
+      } catch {}
     } else { toast.error('Failed. Check Firebase config.'); }
     setSaving(false);
   };
@@ -303,9 +413,9 @@ const Support = ({ profile }) => {
                 </div>
                 <span className={`px-3 py-1 rounded-full label-eyebrow text-[9px] ${statusStyle[t.status] || statusStyle.OPEN}`}>{t.status}</span>
               </div>
-              {t.resolution && (
+              {(t.resolution || t.remarks) && (
                 <div className="mt-3 p-2 rounded-xl bg-emerald-500/10 text-xs text-emerald-700">
-                  <span className="font-bold">Resolution:</span> {t.resolution}
+                  <span className="font-bold">Resolution:</span> {t.resolution || t.remarks}
                 </div>
               )}
             </div>
@@ -449,17 +559,22 @@ function ParentHome() {
   const [child, setChild] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
+  // Multi-child: index of currently selected child
+  const [childIdx, setChildIdx] = useState(0);
+  const linkedStudents = profile?.linkedStudents || (profile?.linkedStudentId ? [{ id: profile.linkedStudentId, name: profile.linkedStudentName, className: profile.linkedStudentClass, section: profile.section }] : []);
+  const activeChild = linkedStudents[childIdx] || null;
 
   useEffect(() => {
     const loadChild = async () => {
-      if (profile?.linkedStudentId) {
-        const s = await getStudent(profile.linkedStudentId);
+      const studentId = activeChild?.id || profile?.linkedStudentId;
+      if (studentId) {
+        const s = await getStudent(studentId);
         setChild(s);
       }
       setLoading(false);
     };
     loadChild();
-  }, [profile?.linkedStudentId]);
+  }, [activeChild?.id, profile?.linkedStudentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show welcome splash only once per login session (not on every navigation)
   useEffect(() => {
@@ -491,6 +606,19 @@ function ParentHome() {
           </p>
         </div>
       </div>
+
+      {/* Multi-child switcher */}
+      {linkedStudents.length > 1 && (
+        <div className="flex gap-2 flex-wrap">
+          <span className="label-eyebrow text-muted-foreground self-center">Switch Child:</span>
+          {linkedStudents.map((c, i) => (
+            <button key={c.id} onClick={() => { setChildIdx(i); setLoading(true); }}
+              className={`px-4 py-2 rounded-2xl label-eyebrow text-xs border transition-all ${childIdx === i ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted border-border text-muted-foreground'}`}>
+              {c.name} · Class {c.className}{c.section ? `-${c.section}` : ''}
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center py-8 text-muted-foreground">Loading your child's data…</div>
@@ -569,7 +697,7 @@ export default function ParentDashboard() {
       <Route path="announcements" element={<Announcements />} />
       <Route path="result"        element={<Result studentId={studentId} />} />
       <Route path="attendance"    element={<Attendance studentId={studentId} student={student} />} />
-      <Route path="finance"       element={<Finance studentId={studentId} />} />
+      <Route path="finance"       element={<Finance studentId={studentId} profile={profile} />} />
       <Route path="support"       element={<Support profile={profile} />} />
       <Route path="messages"      element={<Messages profile={profile} />} />
       <Route path="diary"         element={<Diary />} />

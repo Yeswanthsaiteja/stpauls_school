@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, RefreshCw, Headset } from 'lucide-react';
 import { listTickets, addTicket, updateTicketStatus } from '../services/firebase/crmService';
+import { addNotification } from '../services/firebase/notificationsService';
 import { toast } from 'sonner';
 
 const STATUSES = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'];
@@ -59,10 +60,24 @@ export default function CRMPanel() {
     }
   };
 
+  const [resolutionMap, setResolutionMap] = useState({});
+
   const changeStatus = async (id, status) => {
-    await updateTicketStatus(id, status);
-    setList(l => l.map(t => t.id === id ? { ...t, status } : t));
+    const ticket = list.find(t => t.id === id);
+    const resolution = resolutionMap[id] || '';
+    await updateTicketStatus(id, status, resolution);
+    setList(l => l.map(t => t.id === id ? { ...t, status, resolution } : t));
     toast.success('Status updated');
+    // Notify parent if they raised the ticket
+    if (ticket?.raisedBy) {
+      const parentUserId = `phone_${ticket.raisedBy.replace(/\D/g, '')}`;
+      await addNotification({
+        userId: parentUserId,
+        type: 'ticket_update',
+        title: `Ticket ${ticket.ticketNo || ''} Updated`,
+        body: `Your support ticket "${ticket.title}" is now ${status.replace('_', ' ')}.${resolution ? ` Resolution: ${resolution}` : ''}`,
+      });
+    }
   };
 
   const filtered = filter === 'ALL' ? list : list.filter(t => t.status === filter);
@@ -120,15 +135,24 @@ export default function CRMPanel() {
                   </div>
                   <div className="font-bold text-base">{t.title}</div>
                   {t.message && <div className="text-sm text-muted-foreground mt-1 line-clamp-2">{t.message}</div>}
-                  {t.createdByName && <div className="label-eyebrow text-muted-foreground mt-2">By: {t.createdByName}</div>}
+                  {(t.createdByName || t.parentName) && <div className="label-eyebrow text-muted-foreground mt-2">By: {t.createdByName || t.parentName} {t.studentName ? `· for ${t.studentName}` : ''}</div>}
+                  {t.resolution && <div className="mt-1 text-xs text-emerald-700 bg-emerald-500/10 px-2 py-1 rounded-lg">Resolution: {t.resolution}</div>}
                 </div>
-                <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-col items-end gap-2 min-w-[140px]">
                   <span className={`px-3 py-1 rounded-full label-eyebrow border ${STATUS_STYLES[t.status] || STATUS_STYLES.OPEN}`}>{t.status.replace('_', ' ')}</span>
                   {t.status !== 'CLOSED' && (
-                    <select value={t.status} onChange={e => changeStatus(t.id, e.target.value)}
-                      className="text-xs px-2 py-1 rounded-xl border border-border bg-card">
-                      {STATUSES.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-                    </select>
+                    <>
+                      <input
+                        value={resolutionMap[t.id] || ''}
+                        onChange={e => setResolutionMap(m => ({ ...m, [t.id]: e.target.value }))}
+                        placeholder="Resolution note…"
+                        className="text-xs px-2 py-1 rounded-xl border border-border bg-card w-full outline-none"
+                      />
+                      <select value={t.status} onChange={e => changeStatus(t.id, e.target.value)}
+                        className="text-xs px-2 py-1 rounded-xl border border-border bg-card w-full">
+                        {STATUSES.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                      </select>
+                    </>
                   )}
                 </div>
               </div>

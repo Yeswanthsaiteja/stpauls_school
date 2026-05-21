@@ -5,7 +5,7 @@ import {
   GraduationCap, LayoutDashboard, Users, BookOpen, IndianRupee, UserSquare2,
   CalendarCheck, MegaphoneIcon, Headset, IdCard, Bus, Hotel, Settings,
   Sun, Moon, LogOut, Menu, X, Bell, Search, ChevronLeft, Globe, AlertTriangle,
-  FileText, CheckSquare, MessageSquare, Check,
+  FileText, CheckSquare, MessageSquare, Check, BookMarked,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -36,6 +36,7 @@ const ROLE_NAV = {
     { to: '/dashboard/staff-dashboard/attendance', icon: CalendarCheck,   key: 'attendance' },
     { to: '/dashboard/staff-dashboard/marks',      icon: BookOpen,        key: 'marks' },
     { to: '/dashboard/staff-dashboard/topics',     icon: CheckSquare,     key: 'topics' },
+    { to: '/dashboard/staff-dashboard/diary',      icon: BookMarked,      key: 'diary' },
     { to: '/dashboard/staff-dashboard/leave',      icon: FileText,        key: 'leave' },
     { to: '/dashboard/staff-dashboard/messages',   icon: MessageSquare,   key: 'messages' },
     { to: '/dashboard/settings',                   icon: Settings,        key: 'settings' },
@@ -71,6 +72,8 @@ const NOTE_COLOURS = {
   leave_status:  'bg-emerald-500/10 text-emerald-600',
   message:       'bg-blue-500/10 text-blue-600',
   announcement:  'bg-violet-500/10 text-violet-600',
+  crm_ticket:    'bg-rose-500/10 text-rose-600',
+  ticket_update: 'bg-emerald-500/10 text-emerald-600',
 };
 
 function NotificationDropdown({ notifications, userId, onClose }) {
@@ -136,7 +139,8 @@ function NotificationDropdown({ notifications, userId, onClose }) {
               {n.type === 'leave_status'  && <Check className="h-3.5 w-3.5" />}
               {n.type === 'message'       && <MessageSquare className="h-3.5 w-3.5" />}
               {n.type === 'announcement'  && <Bell className="h-3.5 w-3.5" />}
-              {!['leave_request','leave_status','message','announcement'].includes(n.type) && <Bell className="h-3.5 w-3.5" />}
+              {(n.type === 'crm_ticket' || n.type === 'ticket_update') && <BookMarked className="h-3.5 w-3.5" />}
+              {!['leave_request','leave_status','message','announcement','crm_ticket','ticket_update'].includes(n.type) && <Bell className="h-3.5 w-3.5" />}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-1">

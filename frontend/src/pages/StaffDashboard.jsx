@@ -23,7 +23,7 @@ import { listEmployees, listLeaveRequests, addLeaveRequest } from '../services/f
 import { getAttendance, saveAttendance } from '../services/firebase/attendanceService';
 import { listSubjects, listTopics, updateTopic, listClasses, listExamSetups, bulkSaveResults, listResults } from '../services/firebase/academicService';
 import { calcGrade } from '../lib/utils';
-import { listAnnouncements, sendMessage, subscribeMessages } from '../services/firebase/communicationService';
+import { listAnnouncements, sendMessage, subscribeMessages, listDiaryEntries, addDiaryEntry } from '../services/firebase/communicationService';
 import { addNotification } from '../services/firebase/notificationsService';
 import { db, isFirebaseConfigured } from '../lib/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
@@ -35,7 +35,7 @@ const TENANT_ID_LEAVE = process.env.REACT_APP_TENANT_ID || 'stpauls';
 function useSectionFromPath() {
   const { pathname } = useLocation();
   const seg = pathname.split('/').pop();
-  const map = { 'my-class': 'students', attendance: 'attendance', marks: 'marks', topics: 'topics', leave: 'leave', messages: 'messages' };
+  const map = { 'my-class': 'students', attendance: 'attendance', marks: 'marks', topics: 'topics', leave: 'leave', messages: 'messages', diary: 'diary' };
   return map[seg] || 'home';
 }
 
@@ -108,8 +108,8 @@ function StudentEditModal({ student, onClose, onSaved }) {
           <button onClick={onClose} className="px-4 rounded-xl bg-muted label-eyebrow text-xs">Cancel</button>
         </div>
       </motion.div>
-    </motion.div>
-  );
+  </motion.div>
+);
 }
 
 // ─── Home Tab ──────────────────────────────────────────────────────────────────
@@ -506,7 +506,7 @@ function MarksTab({ assignments, allStudents }) {
             {classSubjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             {classSubjects.length === 0 && <option value="">No subjects</option>}
           </select>
-        </div>
+          </div>
         <div>
           <label className="label-eyebrow text-muted-foreground">Exam</label>
           <select value={examId} onChange={e => setExamId(e.target.value)}
@@ -575,15 +575,20 @@ function MarksTab({ assignments, allStudents }) {
 }
 
 // ─── Topics Tab ───────────────────────────────────────────────────────────────
+const TOPIC_STATES = ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'];
+const TOPIC_STATE_CONFIG = {
+  NOT_STARTED: { label: 'Not Started', color: 'text-muted-foreground', bg: 'border-border', icon: Square },
+  IN_PROGRESS: { label: 'In Progress', color: 'text-amber-600', bg: 'bg-amber-500/5 border-amber-500/20', icon: RefreshCw },
+  COMPLETED:   { label: 'Completed',   color: 'text-emerald-600', bg: 'bg-emerald-500/5 border-emerald-500/20', icon: CheckSquare },
+};
+
 function TopicsTab({ assignments, allSubjects, staffName }) {
-  // Use subjects directly assigned to this teacher from Firestore subject records
   const mySubjects = assignments.teachingSubjects;
   const [topics, setTopics] = useState([]);
   const [selSubject, setSelSubject] = useState(null);
   const [loading, setLoading] = useState(false);
   const [toggling, setToggling] = useState({});
 
-  // Auto-select first subject
   useEffect(() => { if (mySubjects.length > 0 && !selSubject) setSelSubject(mySubjects[0]); }, [mySubjects.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadTopics = useCallback(async (subjectId) => {
@@ -594,23 +599,30 @@ function TopicsTab({ assignments, allSubjects, staffName }) {
     setLoading(false);
   }, []);
 
-  // Auto-load topics whenever selected subject changes
   useEffect(() => { if (selSubject?.id) loadTopics(selSubject.id); }, [selSubject?.id, loadTopics]);
 
-  const toggleComplete = async (topic) => {
-    const isCompleted = topic.status === 'COMPLETED';
+  // Cycle: NOT_STARTED → IN_PROGRESS → COMPLETED → NOT_STARTED
+  const cycleStatus = async (topic) => {
+    const cur = topic.status || 'NOT_STARTED';
+    const idx = TOPIC_STATES.indexOf(cur);
+    const next = TOPIC_STATES[(idx + 1) % TOPIC_STATES.length];
     setToggling(p => ({ ...p, [topic.id]: true }));
     try {
       await updateTopic(topic.id, {
-        status: isCompleted ? 'PENDING' : 'COMPLETED',
-        completedBy: isCompleted ? null : staffName,
-        completedDate: isCompleted ? null : TODAY,
+        status: next,
+        completedBy: next === 'COMPLETED' ? staffName : null,
+        completedDate: next === 'COMPLETED' ? TODAY : null,
+        inProgressBy: next === 'IN_PROGRESS' ? staffName : null,
       });
-      setTopics(prev => prev.map(t => t.id === topic.id ? { ...t, status: isCompleted ? 'PENDING' : 'COMPLETED', completedBy: isCompleted ? null : staffName } : t));
-      toast.success(isCompleted ? 'Marked as pending' : 'Topic marked as completed!');
+      setTopics(prev => prev.map(t => t.id === topic.id ? { ...t, status: next } : t));
+      const msgs = { NOT_STARTED: 'Marked as Not Started', IN_PROGRESS: 'Marked as In Progress', COMPLETED: 'Topic completed!' };
+      toast.success(msgs[next]);
     } catch { toast.error('Failed to update topic'); }
     setToggling(p => ({ ...p, [topic.id]: false }));
   };
+
+  const completed = topics.filter(t => t.status === 'COMPLETED').length;
+  const inProgress = topics.filter(t => t.status === 'IN_PROGRESS').length;
 
   return (
     <div className="space-y-4">
@@ -620,7 +632,6 @@ function TopicsTab({ assignments, allSubjects, staffName }) {
         </div>
       )}
 
-      {/* Subject selector — from assigned subjects in Firestore */}
       <div className="flex gap-2 flex-wrap">
         {mySubjects.map(s => (
           <button key={s.id} onClick={() => { setSelSubject(s); loadTopics(s.id); }}
@@ -632,27 +643,46 @@ function TopicsTab({ assignments, allSubjects, staffName }) {
 
       {selSubject && (
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="label-eyebrow text-muted-foreground">{selSubject.name} · {topics.length} topic(s)</div>
-            <div className="text-xs text-muted-foreground">{topics.filter(t => t.status === 'COMPLETED').length} completed</div>
+            <div className="flex gap-2 text-xs">
+              <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 font-bold">{completed} done</span>
+              <span className="px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 font-bold">{inProgress} in progress</span>
+              <span className="px-2.5 py-1 rounded-full bg-muted text-muted-foreground font-bold">{topics.length - completed - inProgress} not started</span>
+            </div>
           </div>
+          {/* Progress bar */}
+          {topics.length > 0 && (
+            <div className="h-2 w-full rounded-full bg-muted overflow-hidden flex">
+              <div className="h-full bg-emerald-500 transition-all" style={{ width: `${(completed / topics.length) * 100}%` }} />
+              <div className="h-full bg-amber-400 transition-all" style={{ width: `${(inProgress / topics.length) * 100}%` }} />
+            </div>
+          )}
 
           {loading ? <div className="text-center py-6 text-muted-foreground text-sm">Loading…</div> : (
             topics.length === 0 ? (
-              <p className="text-center text-muted-foreground py-6 text-sm">No topics added for this subject yet</p>
+              <p className="text-center text-muted-foreground py-6 text-sm">No topics added for this subject yet. Admin adds topics in Academic → Subjects.</p>
             ) : (
               topics.map((t, i) => {
-                const done = t.status === 'COMPLETED';
+                const status = t.status || 'NOT_STARTED';
+                const cfg = TOPIC_STATE_CONFIG[status] || TOPIC_STATE_CONFIG.NOT_STARTED;
+                const Icon = cfg.icon;
                 return (
-                  <div key={t.id || i} className={`flex items-start gap-3 p-3 rounded-2xl border transition-colors ${done ? 'bg-emerald-500/5 border-emerald-500/20' : 'border-border'}`}>
-                    <button onClick={() => toggleComplete(t)} disabled={toggling[t.id]}
-                      className={`flex-shrink-0 mt-0.5 ${done ? 'text-emerald-500' : 'text-muted-foreground'}`}>
-                      {toggling[t.id] ? <Loader2 className="h-5 w-5 animate-spin" /> : done ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
+                  <div key={t.id || i} className={`flex items-start gap-3 p-3 rounded-2xl border transition-colors ${cfg.bg}`}>
+                    <button onClick={() => cycleStatus(t)} disabled={toggling[t.id]}
+                      className={`flex-shrink-0 mt-0.5 ${cfg.color}`} title="Click to cycle status">
+                      {toggling[t.id] ? <Loader2 className="h-5 w-5 animate-spin" /> : <Icon className="h-5 w-5" />}
                     </button>
                     <div className="flex-1 min-w-0">
-                      <div className={`font-bold text-sm ${done ? 'line-through text-muted-foreground' : ''}`}>{t.title || t.name}</div>
+                      <div className={`font-bold text-sm ${status === 'COMPLETED' ? 'line-through text-muted-foreground' : ''}`}>
+                        {t.topicName || t.title || t.name || '(Untitled topic)'}
+                      </div>
                       {t.description && <div className="text-xs text-muted-foreground mt-0.5">{t.description}</div>}
-                      {done && t.completedBy && <div className="text-xs text-emerald-600 mt-1">✓ Completed by {t.completedBy} · {t.completedDate}</div>}
+                      <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.color} bg-current/10`} style={{ backgroundColor: 'transparent' }}>
+                        {cfg.label}
+                        {status === 'COMPLETED' && t.completedBy && ` · by ${t.completedBy}`}
+                        {status === 'IN_PROGRESS' && t.inProgressBy && ` · ${t.inProgressBy}`}
+                      </span>
                     </div>
                   </div>
                 );
@@ -776,7 +806,7 @@ function LeaveTab({ profile }) {
               <div>
                 <label className="label-eyebrow text-muted-foreground">To</label>
                 <input type="date" value={form.toDate} onChange={e => setForm(f => ({ ...f, toDate: e.target.value }))} className="mt-1 w-full px-3 py-2 rounded-xl border border-border bg-card text-sm outline-none" />
-              </div>
+            </div>
               <div className="col-span-2">
                 <label className="label-eyebrow text-muted-foreground">Reason</label>
                 <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} rows={2}
@@ -786,7 +816,7 @@ function LeaveTab({ profile }) {
             <div className="flex gap-2">
               <button onClick={submit} disabled={saving} className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground label-eyebrow text-xs disabled:opacity-50">{saving ? 'Submitting…' : 'Submit'}</button>
               <button onClick={() => setShowForm(false)} className="px-4 py-2.5 rounded-xl bg-muted label-eyebrow text-xs">Cancel</button>
-            </div>
+                  </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -804,7 +834,7 @@ function LeaveTab({ profile }) {
             </div>
           ))}
           {leaves.length === 0 && <p className="text-center text-muted-foreground py-8 text-sm">No leave requests yet</p>}
-        </div>
+          </div>
       )}
     </div>
   );
@@ -948,6 +978,156 @@ function MessagesTab({ profile, employees }) {
   );
 }
 
+// ─── Staff Diary Tab ─────────────────────────────────────────────────────────
+function StaffDiaryTab({ assignments, profile }) {
+  const { myClasses, myClassRecords } = assignments;
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [selClass, setSelClass] = useState(myClasses[0] || '');
+  const [selSection, setSelSection] = useState('');
+
+  // form state
+  const [form, setForm] = useState({
+    date: TODAY, className: myClasses[0] || '', section: '',
+    note: '', homework: '', author: profile?.fullName || 'Teacher',
+  });
+
+  const sections = (myClassRecords?.find(r => r.name === selClass)?.sections || ['A']);
+
+  const load = useCallback(async () => {
+    if (!selClass) { setLoading(false); return; }
+    setLoading(true);
+    const data = await listDiaryEntries({ className: selClass });
+    const filtered = selSection ? data.filter(d => d.section === selSection) : data;
+    setEntries(filtered.sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+    setLoading(false);
+  }, [selClass, selSection]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    if (!form.note.trim() && !form.homework.trim()) return toast.error('Enter a diary note or homework');
+    if (!form.className) return toast.error('Select a class');
+    setSaving(true);
+    try {
+      const row = await addDiaryEntry({ ...form, tenantId: process.env.REACT_APP_TENANT_ID || 'stpauls' });
+      if (row) {
+        setEntries(p => [row, ...p]);
+        toast.success('Diary entry saved!');
+        setShowForm(false);
+        setForm(f => ({ ...f, note: '', homework: '' }));
+      } else { toast.error('Failed to save. Check Firebase config.'); }
+    } catch (e) { toast.error('Error: ' + e.message); }
+    setSaving(false);
+  };
+
+  if (myClasses.length === 0) {
+    return (
+      <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-sm text-amber-700">
+        You are not assigned as class teacher. Only class teachers can post diary entries. Admin can assign you in <strong>Academic → Classes & Sections</strong>.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="font-display font-black text-2xl tracking-tighter">Class Diary</h2>
+          <p className="text-sm text-muted-foreground">Post daily notes and homework for parents</p>
+        </div>
+        <button onClick={() => setShowForm(v => !v)}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-primary text-primary-foreground label-eyebrow text-xs">
+          <Plus className="h-3.5 w-3.5" /> New Entry
+        </button>
+      </div>
+
+      {/* Class / Section filter */}
+      <div className="flex gap-2 flex-wrap">
+        {myClasses.map(cls => (
+          <button key={cls} onClick={() => { setSelClass(cls); setForm(f => ({ ...f, className: cls })); }}
+            className={`px-3 py-1.5 rounded-2xl label-eyebrow text-xs border ${selClass === cls ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted border-border'}`}>
+            {cls}
+          </button>
+        ))}
+        {sections.length > 1 && sections.map(sec => (
+          <button key={sec} onClick={() => { setSelSection(selSection === sec ? '' : sec); setForm(f => ({ ...f, section: sec })); }}
+            className={`px-3 py-1.5 rounded-2xl label-eyebrow text-xs border ${selSection === sec ? 'bg-blue-500 text-white border-blue-500' : 'bg-muted border-border'}`}>
+            Sec {sec}
+          </button>
+        ))}
+      </div>
+
+      <AnimatePresence>
+        {showForm && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            className="glass-morphism rounded-[2rem] p-5 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label-eyebrow text-muted-foreground">Date</label>
+                <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                  className="mt-1 w-full px-3 py-2 rounded-xl border border-border bg-card text-sm outline-none" />
+              </div>
+              <div>
+                <label className="label-eyebrow text-muted-foreground">Section</label>
+                <select value={form.section} onChange={e => setForm(f => ({ ...f, section: e.target.value }))}
+                  className="mt-1 w-full px-3 py-2 rounded-xl border border-border bg-card text-sm outline-none">
+                  <option value="">All Sections</option>
+                  {sections.map(s => <option key={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="label-eyebrow text-muted-foreground">Class Note / Diary</label>
+              <textarea value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} rows={3}
+                placeholder="What happened in class today? Syllabus covered, activities…"
+                className="mt-1 w-full px-3 py-2 rounded-xl border border-border bg-card text-sm outline-none resize-none" />
+            </div>
+            <div>
+              <label className="label-eyebrow text-muted-foreground">Homework / Assignment</label>
+              <textarea value={form.homework} onChange={e => setForm(f => ({ ...f, homework: e.target.value }))} rows={2}
+                placeholder="Homework assigned, submission deadline…"
+                className="mt-1 w-full px-3 py-2 rounded-xl border border-border bg-card text-sm outline-none resize-none" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={save} disabled={saving}
+                className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground label-eyebrow text-xs disabled:opacity-50 flex items-center justify-center gap-1.5">
+                {saving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Saving…</> : <><Save className="h-3.5 w-3.5" />Post Entry</>}
+              </button>
+              <button onClick={() => setShowForm(false)} className="px-4 py-2.5 rounded-xl bg-muted label-eyebrow text-xs">Cancel</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {loading ? <div className="text-center py-8 text-muted-foreground text-sm">Loading entries…</div> : (
+        <div className="space-y-3">
+          {entries.map((e, i) => (
+            <motion.div key={e.id || i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}
+              className="glass-morphism rounded-[1.75rem] p-4">
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <span className="font-bold text-sm">{e.date}</span>
+                <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary label-eyebrow">{e.className}{e.section ? `-${e.section}` : ''}</span>
+                <span className="label-eyebrow text-muted-foreground">by {e.author}</span>
+              </div>
+              {e.note && <p className="text-sm">{e.note}</p>}
+              {e.homework && (
+                <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                  <div className="label-eyebrow text-amber-600 mb-1">Homework</div>
+                  <p className="text-sm">{e.homework}</p>
+                </div>
+              )}
+            </motion.div>
+          ))}
+          {entries.length === 0 && <p className="text-center text-muted-foreground py-8 text-sm">No diary entries for {selClass} yet. Click "New Entry" to add one.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Staff Dashboard ─────────────────────────────────────────────────────
 export default function StaffDashboard() {
   const { profile } = useAuth();
@@ -1000,6 +1180,7 @@ export default function StaffDashboard() {
         {section === 'topics'     && <TopicsTab assignments={assignments} allSubjects={allSubjects} staffName={profile?.fullName} />}
         {section === 'leave'      && <LeaveTab profile={profile} />}
         {section === 'messages'   && <MessagesTab profile={profile} employees={employees} />}
+        {section === 'diary'      && <StaffDiaryTab assignments={assignments} profile={profile} />}
       </motion.div>
     </AnimatePresence>
   );
