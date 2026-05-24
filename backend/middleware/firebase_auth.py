@@ -25,13 +25,24 @@ def _init_firebase():
     try:
         import firebase_admin
         from firebase_admin import credentials
-        cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if cred_path and os.path.exists(cred_path):
-            cred = credentials.Certificate(cred_path)
-        else:
-            cred = credentials.ApplicationDefault()
+        import json
+
         if not firebase_admin._apps:
+            # Option 1: Full JSON content in env var (Railway / cloud deployment)
+            sa_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+            if sa_json:
+                sa_dict = json.loads(sa_json)
+                cred = credentials.Certificate(sa_dict)
+            # Option 2: Path to local JSON file (local development)
+            elif os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") and \
+                 os.path.exists(os.environ["GOOGLE_APPLICATION_CREDENTIALS"]):
+                cred = credentials.Certificate(os.environ["GOOGLE_APPLICATION_CREDENTIALS"])
+            # Option 3: Google Cloud Application Default Credentials
+            else:
+                cred = credentials.ApplicationDefault()
+
             firebase_admin.initialize_app(cred)
+
         _firebase_initialized = True
         logger.info("Firebase Admin SDK initialized")
     except Exception as e:
