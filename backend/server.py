@@ -16,14 +16,19 @@ app = FastAPI(
 )
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
-# Default to localhost dev origins only; set CORS_ORIGINS in .env for production
-# e.g. CORS_ORIGINS=https://erp.stpauls.edu.in,https://app.stpauls.edu.in
-_cors_env = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
-origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+# Set CORS_ORIGINS env var in Railway to restrict to your domains.
+# e.g. CORS_ORIGINS=https://your-app.vercel.app,https://your-domain.com
+# Leave unset (or use *) to allow all origins during development/testing.
+_cors_env = os.environ.get("CORS_ORIGINS", "*")
+if _cors_env.strip() == "*":
+    origins = ["*"]
+else:
+    origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_credentials=origins != ["*"],  # credentials only work with specific origins
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
