@@ -138,7 +138,7 @@ async def send_otp(payload: OtpRequest):
         try:
             # We use AUTOGEN so 2Factor generates the OTP and uses their pre-approved DLT SMS template.
             # If we send our own custom OTP, it fails DLT checks in India and falls back to a Voice Call.
-            url = f"https://2factor.in/API/V1/{two_factor_key}/SMS/{mobile}/AUTOGEN"
+            url = f"https://2factor.in/API/V1/{two_factor_key}/SMS/{mobile}/AUTOGEN/OTP1"
             resp = req.get(url, timeout=10)
             data = resp.json()
             if data.get("Status") == "Success":
