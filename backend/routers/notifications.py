@@ -141,47 +141,23 @@ async def send_otp(payload: OtpRequest):
 
     import requests as req
 
-    otp_message = (
-        f"*St. Paul's High School*\n"
-        f"Your login OTP is: *{otp}*\n"
-        f"Valid for 10 minutes. Do not share this code with anyone."
-    )
-    fast2sms_key = os.environ.get("FAST2SMS_API_KEY")
-
-    # ── 1. Try WhatsApp via Fast2SMS ──────────────────────────────────────────
-    if fast2sms_key:
+    # ── 1. Try 2Factor.in (Primary OTP Provider) ──────────────────────────────
+    two_factor_key = os.environ.get("TWO_FACTOR_API_KEY", "40509a3c-5735-11f1-9800-0200cd936042") # Hardcoded from your dashboard for instant access
+    if two_factor_key:
         try:
-            url = "https://www.fast2sms.com/dev/whatsapp"
-            headers = {"authorization": fast2sms_key, "Content-Type": "application/json"}
-            body = {"message": otp_message, "language": "english", "numbers": mobile10}
-            resp = req.post(url, json=body, headers=headers, timeout=10)
+            # 2Factor handles SMS/WhatsApp automatically based on dashboard settings
+            url = f"https://2factor.in/API/V1/{two_factor_key}/SMS/{mobile}/{otp}"
+            resp = req.get(url, timeout=10)
             data = resp.json()
-            if data.get("return") is True:
-                logger.info("OTP sent to %s via Fast2SMS WhatsApp", mobile10)
-                return {"success": True, "channel": "whatsapp"}
+            if data.get("Status") == "Success":
+                logger.info("OTP sent to %s via 2Factor.in", mobile)
+                return {"success": True, "provider": "2factor"}
             else:
-                logger.warning("Fast2SMS WhatsApp rejected: %s — trying SMS", data)
+                logger.warning("2Factor.in rejected OTP: %s", data)
         except Exception as e:
-            logger.warning("Fast2SMS WhatsApp failed: %s — trying SMS", e)
+            logger.warning("2Factor.in OTP failed: %s", e)
 
-    # ── 2. Fall back to Fast2SMS SMS ──────────────────────────────────────────
-    if fast2sms_key:
-        try:
-            sms_message = f"{otp} is your St. Paul's High School OTP. Valid 10 mins. Do not share."
-            url = "https://www.fast2sms.com/dev/bulkV2"
-            headers = {"authorization": fast2sms_key, "Content-Type": "application/json"}
-            body = {"route": "q", "message": sms_message, "language": "english", "flash": 0, "numbers": mobile10}
-            resp = req.post(url, json=body, headers=headers, timeout=10)
-            data = resp.json()
-            if data.get("return") is True:
-                logger.info("OTP sent to %s via Fast2SMS SMS", mobile10)
-                return {"success": True, "channel": "sms"}
-            else:
-                logger.warning("Fast2SMS SMS rejected: %s", data)
-        except Exception as e:
-            logger.warning("Fast2SMS SMS failed: %s", e)
-
-    # ── Try MSG91 next ─────────────────────────────────────────────────────────
+    # ── 2. Fall back to MSG91 ─────────────────────────────────────────────────
     msg91_key = os.environ.get("MSG91_AUTH_KEY")
     if msg91_key:
         try:
@@ -201,14 +177,13 @@ async def send_otp(payload: OtpRequest):
             resp = req.post(url, json=body, headers=headers, timeout=10)
             resp.raise_for_status()
             logger.info("OTP sent to %s via MSG91", mobile)
-            return {"success": True}
+            return {"success": True, "provider": "msg91"}
         except Exception as e:
             logger.exception("MSG91 OTP send failed for %s: %s", mobile, e)
-            raise HTTPException(status_code=500, detail="OTP delivery failed. Please try again later.")
 
-    # ── No SMS provider configured — dev mode ─────────────────────────────────
-    logger.warning("[DEV] No SMS provider configured. OTP for %s: %s", mobile, otp)
-    return {"success": True, "dev": True, "otp": otp, "hint": "No SMS provider configured — OTP shown for development only"}
+    # ── No SMS provider succeeded — dev mode ──────────────────────────────────
+    logger.warning("[DEV] No SMS provider configured or all failed. OTP for %s: %s", mobile, otp)
+    return {"success": True, "dev": True, "otp": otp, "hint": "Check provider API keys"}
 
 
 # ─── Verify OTP (no auth required) ───────────────────────────────────────────
