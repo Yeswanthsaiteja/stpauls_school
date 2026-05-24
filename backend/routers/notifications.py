@@ -130,34 +130,35 @@ class OtpVerifyRequest(BaseModel):
 @router.post("/send-otp")
 async def send_otp(payload: OtpRequest):
     mobile = _normalise_mobile(payload.phone)
-    mobile10 = mobile[-10:]   # last 10 digits — used by Fast2SMS
-
-    otp = str(secrets.randbelow(900000) + 100000)   # cryptographically random 6-digit
-    _otp_set(mobile, {
-        "otp": otp,
-        "expires_at": time.time() + 600,   # 10 minutes
-        "attempts": 0,
-    })
-
     import requests as req
 
     # ── 1. Try 2Factor.in (Primary OTP Provider) ──────────────────────────────
     two_factor_key = os.environ.get("TWO_FACTOR_API_KEY", "40509a3c-5735-11f1-9800-0200cd936042") # Hardcoded from your dashboard for instant access
     if two_factor_key:
         try:
-            # Append /OTP1 to explicitly force the default SMS template
-            url = f"https://2factor.in/API/V1/{two_factor_key}/SMS/{mobile}/{otp}/OTP1"
+            # We use AUTOGEN so 2Factor generates the OTP and uses their pre-approved DLT SMS template.
+            # If we send our own custom OTP, it fails DLT checks in India and falls back to a Voice Call.
+            url = f"https://2factor.in/API/V1/{two_factor_key}/SMS/{mobile}/AUTOGEN"
             resp = req.get(url, timeout=10)
             data = resp.json()
             if data.get("Status") == "Success":
-                logger.info("OTP sent to %s via 2Factor.in", mobile)
+                logger.info("OTP sent to %s via 2Factor.in AUTOGEN", mobile)
                 return {"success": True, "provider": "2factor"}
             else:
                 logger.warning("2Factor.in rejected OTP: %s", data)
         except Exception as e:
             logger.warning("2Factor.in OTP failed: %s", e)
 
-    # ── 2. Fall back to MSG91 ─────────────────────────────────────────────────
+    # ── 2. Fall back to MSG91 (if 2Factor fails or isn't used) ────────────────
+    
+    # If we get here, generate our own OTP and use MSG91
+    otp = str(secrets.randbelow(900000) + 100000)
+    _otp_set(mobile, {
+        "otp": otp,
+        "expires_at": time.time() + 600,
+        "attempts": 0,
+    })
+
     msg91_key = os.environ.get("MSG91_AUTH_KEY")
     if msg91_key:
         try:
@@ -191,6 +192,27 @@ async def send_otp(payload: OtpRequest):
 @router.post("/verify-otp")
 async def verify_otp(payload: OtpVerifyRequest):
     mobile = _normalise_mobile(payload.phone)
+    import requests as req
+
+    # ── 1. Check if 2Factor.in is active ──────────────────────────────────────
+    two_factor_key = os.environ.get("TWO_FACTOR_API_KEY", "40509a3c-5735-11f1-9800-0200cd936042")
+    if two_factor_key:
+        try:
+            # Verify the OTP against 2Factor's servers
+            url = f"https://2factor.in/API/V1/{two_factor_key}/SMS/VERIFY3/{mobile}/{payload.otp.strip()}"
+            resp = req.get(url, timeout=10)
+            data = resp.json()
+            if data.get("Status") == "Success":
+                return {"success": True, "verified": True, "phone": f"+{mobile}"}
+            else:
+                raise HTTPException(status_code=400, detail="Incorrect OTP or OTP has expired.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning("2Factor VERIFY3 failed: %s", e)
+            raise HTTPException(status_code=500, detail="OTP verification service is currently unavailable.")
+
+    # ── 2. Fall back to internal validation (if MSG91 or Dev mode was used) ───
     stored = _otp_get(mobile)
 
     if not stored:
