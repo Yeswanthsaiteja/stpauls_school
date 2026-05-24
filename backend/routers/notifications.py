@@ -145,8 +145,8 @@ async def send_otp(payload: OtpRequest):
     two_factor_key = os.environ.get("TWO_FACTOR_API_KEY", "40509a3c-5735-11f1-9800-0200cd936042") # Hardcoded from your dashboard for instant access
     if two_factor_key:
         try:
-            # 2Factor handles SMS/WhatsApp automatically based on dashboard settings
-            url = f"https://2factor.in/API/V1/{two_factor_key}/SMS/{mobile}/{otp}"
+            # Append /OTP1 to explicitly force the default SMS template
+            url = f"https://2factor.in/API/V1/{two_factor_key}/SMS/{mobile}/{otp}/OTP1"
             resp = req.get(url, timeout=10)
             data = resp.json()
             if data.get("Status") == "Success":
