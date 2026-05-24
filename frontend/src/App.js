@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { TenantProvider } from './contexts/TenantContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import './i18n/config';
+import { OfflineBanner, usePushNotifications, isNative } from './hooks/useNative';
 
 import LoginPage from './pages/LoginPage';
 import DashboardLayout from './components/DashboardLayout';
@@ -88,6 +89,7 @@ function App() {
       <AuthProvider>
         <TenantProvider>
           <BrowserRouter>
+            <OfflineBanner />
             <Toaster position="top-right" richColors />
             <Routes>
               <Route path="/" element={<Navigate to="/login" replace />} />

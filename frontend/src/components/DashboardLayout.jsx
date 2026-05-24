@@ -5,8 +5,9 @@ import {
   GraduationCap, LayoutDashboard, Users, BookOpen, IndianRupee, UserSquare2,
   CalendarCheck, MegaphoneIcon, Headset, IdCard, Bus, Hotel, Settings,
   Sun, Moon, LogOut, Menu, X, Bell, Search, ChevronLeft, Globe, AlertTriangle,
-  FileText, CheckSquare, MessageSquare, Check, BookMarked,
+  FileText, CheckSquare, MessageSquare, Check, BookMarked, ChevronRight,
 } from 'lucide-react';
+import { ParentChildContext } from '../pages/ParentDashboard';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useTenant } from '../contexts/TenantContext';
@@ -25,6 +26,7 @@ const ROLE_NAV = {
     { to: '/dashboard/attendance', icon: CalendarCheck, key: 'attendance' },
     { to: '/dashboard/communication', icon: MegaphoneIcon, key: 'communication' },
     { to: '/dashboard/crm', icon: Headset, key: 'crm' },
+    { to: '/dashboard/diary', icon: BookMarked, key: 'diary' },
     { to: '/dashboard/id-cards', icon: IdCard, key: 'idCards' },
     { to: '/dashboard/transport', icon: Bus, key: 'transport' },
     { to: '/dashboard/hostel', icon: Hotel, key: 'hostel' },
@@ -42,7 +44,8 @@ const ROLE_NAV = {
     { to: '/dashboard/settings',                   icon: Settings,        key: 'settings' },
   ],
   PARENT: [
-    { to: '/dashboard/parent-dashboard', icon: LayoutDashboard, key: 'dashboard' },
+    { to: '/dashboard/parent-dashboard', icon: LayoutDashboard, key: 'dashboard', end: true },
+    { to: '/dashboard/parent-dashboard/diary', icon: BookMarked, key: 'diary' },
     { to: '/dashboard/parent-dashboard/attendance', icon: CalendarCheck, key: 'attendance' },
     { to: '/dashboard/parent-dashboard/finance', icon: IndianRupee, key: 'finance' },
     { to: '/dashboard/parent-dashboard/result', icon: BookOpen, key: 'results' },
@@ -168,6 +171,10 @@ export default function DashboardLayout() {
   const [bellOpen, setBellOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const bellRef = useRef(null);
+
+  // Multi-child switcher state — read from ParentChildContext if available
+  const parentCtx = React.useContext(ParentChildContext);
+  const isParent = roleKey(profile?.role) === 'PARENT';
 
   const items = useMemo(() => ROLE_NAV[roleKey(profile?.role)] || [], [profile]);
 
@@ -325,7 +332,7 @@ export default function DashboardLayout() {
         {/* Topbar */}
         <header className="sticky top-0 z-30 border-b border-border bg-background/70 backdrop-blur-xl">
           <div className="flex items-center justify-between px-4 sm:px-6 h-16 gap-3">
-            <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
               <button onClick={() => setMobileOpen(true)} className="lg:hidden p-2 rounded-xl hover:bg-muted" data-testid="mobile-menu-open">
                 <Menu className="h-5 w-5" />
               </button>
@@ -333,6 +340,25 @@ export default function DashboardLayout() {
                 <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 <span className="label-eyebrow text-muted-foreground">{tenant?.name || "St. Paul's High School"}</span>
               </div>
+              {/* Multi-child switcher in topbar — only for PARENT with multiple children */}
+              {isParent && parentCtx.linkedStudents.length > 1 && (
+                <div className="hidden sm:flex items-center gap-1.5 ml-2">
+                  <span className="label-eyebrow text-muted-foreground text-[10px]">Child:</span>
+                  {parentCtx.linkedStudents.map((c, i) => (
+                    <button
+                      key={c.id}
+                      onClick={() => parentCtx.setChildIdx(i)}
+                      className={`px-3 py-1.5 rounded-full label-eyebrow text-[10px] border transition-all ${
+                        parentCtx.childIdx === i
+                          ? 'bg-fuchsia-600 text-white border-fuchsia-600'
+                          : 'bg-muted border-border text-muted-foreground hover:border-fuchsia-400'
+                      }`}
+                    >
+                      {c.name?.split(' ')[0] || `Child ${i + 1}`}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">

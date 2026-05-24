@@ -7,7 +7,22 @@
 import axios from 'axios';
 import { auth, isFirebaseConfigured } from '../lib/firebase';
 
-const BASE_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+// Detect the correct backend URL at runtime.
+// - On Android emulator: 10.0.2.2 routes to the host machine's localhost
+// - On web / real device with a deployed backend: use REACT_APP_BACKEND_URL
+function getBaseUrl() {
+  if (process.env.REACT_APP_BACKEND_URL) return process.env.REACT_APP_BACKEND_URL;
+  try {
+    // Capacitor is only available at runtime inside the native app
+    const { Capacitor } = require('@capacitor/core');
+    if (Capacitor.getPlatform() === 'android') {
+      return 'http://10.0.2.2:8001';
+    }
+  } catch { /* running in browser — Capacitor not available */ }
+  return 'http://localhost:8001';
+}
+
+const BASE_URL = getBaseUrl();
 
 const API = axios.create({
   baseURL: BASE_URL,

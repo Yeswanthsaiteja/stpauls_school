@@ -34,35 +34,40 @@ def _firestore_client():
 
 
 def _otp_set(mobile: str, record: dict) -> None:
+    """Write OTP to both Firestore AND in-memory (dual-write for resilience)."""
+    # Always keep in-memory copy so verify works even if Firestore is slow
+    _otp_fallback[mobile] = record
     db = _firestore_client()
     if db:
         try:
             db.collection(_OTP_COLLECTION).document(mobile).set(record)
-            return
         except Exception as exc:
-            logger.warning("Firestore OTP write failed, using in-memory: %s", exc)
-    _otp_fallback[mobile] = record
+            logger.warning("Firestore OTP write failed (in-memory used): %s", exc)
 
 
 def _otp_get(mobile: str) -> Optional[dict]:
+    """Read OTP — try Firestore first, fall back to in-memory."""
     db = _firestore_client()
     if db:
         try:
             doc = db.collection(_OTP_COLLECTION).document(mobile).get()
-            return doc.to_dict() if doc.exists else None
+            if doc.exists:
+                return doc.to_dict()
+            # Not in Firestore — fall through to in-memory
         except Exception as exc:
             logger.warning("Firestore OTP read failed, using in-memory: %s", exc)
     return _otp_fallback.get(mobile)
 
 
 def _otp_delete(mobile: str) -> None:
+    """Delete OTP from both stores."""
+    _otp_fallback.pop(mobile, None)
     db = _firestore_client()
     if db:
         try:
             db.collection(_OTP_COLLECTION).document(mobile).delete()
         except Exception as exc:
-            logger.warning("Firestore OTP delete failed, using in-memory: %s", exc)
-    _otp_fallback.pop(mobile, None)
+            logger.warning("Firestore OTP delete failed (in-memory cleared): %s", exc)
 
 
 class WhatsAppMessage(BaseModel):

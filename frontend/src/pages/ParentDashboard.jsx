@@ -1,34 +1,39 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, createContext, useContext, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Routes, Route, useNavigate, NavLink } from 'react-router-dom';
 import OnlineExams from './OnlineExams';
 import GPSTracking from './GPSTracking';
 import EventGallery from './EventGallery';
-import Diary from './Diary';
 import ExamTimetable from './ExamTimetablePage';
 import TeacherMessaging from './TeacherMessaging';
 import {
   BookOpen, Bell, IndianRupee, ClipboardCheck, FileText, Library,
   Calendar, MessageSquare, MapPin, Gamepad2, Phone, Camera,
-  Headset, Send, Plus, RefreshCw,
+  Headset, Send, Plus, RefreshCw, BookMarked,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { getStudent } from '../services/firebase/studentsService';
 import { listTransactions } from '../services/firebase/financeService';
+import { listFeeCategories } from '../services/firebase/financeService';
 import { listResults } from '../services/firebase/academicService';
 import { getStudentAttendanceSummary, listAttendance } from '../services/firebase/attendanceService';
 import { listTickets, addTicket } from '../services/firebase/communicationService';
 import { listEmployees } from '../services/firebase/employeesService';
 import { listMessages, sendMessage } from '../services/firebase/communicationService';
+import { listDiaryEntries } from '../services/firebase/communicationService';
 import { getWhatsAppUrl } from '../lib/utils';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { addNotification } from '../services/firebase/notificationsService';
 
+// ─── Parent Context (active child shared across all sub-pages) ────────────────
+export const ParentChildContext = createContext({ activeChild: null, linkedStudents: [], childIdx: 0, setChildIdx: () => {} });
+export const useParentChild = () => useContext(ParentChildContext);
+
 const MODULES = [
-  { key: 'diary',         label: 'Diary',             icon: BookOpen,       color: 'bg-blue-500',    tint: 'bg-blue-500/10 text-blue-500' },
+  { key: 'diary',         label: 'Diary',             icon: BookMarked,     color: 'bg-blue-500',    tint: 'bg-blue-500/10 text-blue-500' },
   { key: 'announcements', label: 'Announcements',      icon: Bell,           color: 'bg-pink-500',    tint: 'bg-pink-500/10 text-pink-500' },
   { key: 'finance',       label: 'Fees',               icon: IndianRupee,    color: 'bg-emerald-500', tint: 'bg-emerald-500/10 text-emerald-500' },
   { key: 'attendance',    label: 'Attendance',         icon: ClipboardCheck, color: 'bg-violet-500',  tint: 'bg-violet-500/10 text-violet-500' },
@@ -51,7 +56,7 @@ const SimplePage = ({ title, description, children, testId }) => (
   </div>
 );
 
-// ─── Announcements (static for now, can be wired to Firestore) ───────────────
+// ─── Announcements (static for now) ──────────────────────────────────────────
 const Announcements = () => (
   <SimplePage title="Announcements" testId="parent-announcements">
     <div className="space-y-3">
@@ -72,13 +77,16 @@ const Announcements = () => (
   </SimplePage>
 );
 
-// ─── Result page — loads from Firestore ──────────────────────────────────────
-const Result = ({ studentId }) => {
+// ─── Result page — loads from Firestore for active child ─────────────────────
+const Result = () => {
+  const { activeChild } = useParentChild();
+  const studentId = activeChild?.id;
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!studentId) { setLoading(false); return; }
+    setLoading(true);
     listResults({}).then(r => {
       setList(r.filter(x => x.studentId === studentId));
       setLoading(false);
@@ -123,19 +131,54 @@ async function loadRazorpayScript() {
   });
 }
 
-// ─── Finance page — loads from Firestore ─────────────────────────────────────
-const Finance = ({ studentId, profile }) => {
-  const [list, setList] = useState([]);
+// ─── Finance — shows fee categories (pending) + transactions (paid) ───────────
+const Finance = () => {
+  const { activeChild } = useParentChild();
+  const { profile } = useAuth();
+  const studentId = activeChild?.id;
+  const studentClass = activeChild?.className || '';
+  const [transactions, setTransactions] = useState([]);
+  const [feeCategories, setFeeCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!studentId) { setLoading(false); return; }
-    listTransactions({ studentId }).then(r => { setList(r); setLoading(false); });
+    setLoading(true);
+    const [txns, cats] = await Promise.all([
+      listTransactions({ studentId }),
+      listFeeCategories(),
+    ]);
+    setTransactions(txns);
+    setFeeCategories(cats);
+    setLoading(false);
   }, [studentId]);
 
-  const paid    = list.filter(x => x.status === 'PAID').reduce((s, x) => s + (x.amount || 0), 0);
-  const pending = list.filter(x => x.status === 'PENDING').reduce((s, x) => s + (x.amount || 0), 0);
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Paid = actual transactions with PAID status
+  const paid = transactions.filter(x => x.status === 'PAID').reduce((s, x) => s + (x.amount || 0), 0);
+
+  // Pending = fee categories for student's class minus already-paid transactions
+  const paidFeeNames = new Set(transactions.filter(x => x.status === 'PAID').map(t => t.feeName));
+  const pendingFromCategories = feeCategories
+    .filter(cat => cat.appliesTo === 'all' || cat.appliesTo === undefined)
+    .map(cat => {
+      const amount = (cat.amounts && (cat.amounts[studentClass] ?? cat.amounts['default'])) || cat.amount || 0;
+      return { id: cat.id, feeName: cat.name, amount, status: 'PENDING', source: 'category' };
+    })
+    .filter(item => item.amount > 0 && !paidFeeNames.has(item.name));
+
+  // Also include PENDING transactions
+  const pendingTxns = transactions.filter(x => x.status === 'PENDING');
+
+  const pending = [...pendingFromCategories, ...pendingTxns].reduce((s, x) => s + (x.amount || 0), 0);
+
+  // All items for display
+  const allItems = [
+    ...transactions,
+    ...pendingFromCategories,
+  ];
 
   const payUPI = async () => {
     if (pending <= 0) return toast.error('No pending fees to pay');
@@ -156,17 +199,17 @@ const Finance = ({ studentId, profile }) => {
         orderId = data.id;
         amount = data.amount;
       } catch {
-        // If backend not available, use amount directly
         orderId = null;
         amount = pending * 100;
       }
 
+      const childName = activeChild?.name || profile?.linkedStudentName || 'Student';
       const options = {
         key: process.env.REACT_APP_RAZORPAY_KEY_ID || '',
         amount: amount || pending * 100,
         currency: 'INR',
         name: "St. Paul's High School",
-        description: `Fee Payment — ${profile?.linkedStudentName || 'Student'}`,
+        description: `Fee Payment — ${childName}`,
         order_id: orderId || undefined,
         method: { upi: true, card: false, netbanking: false, wallet: false, emi: false },
         prefill: { contact: (profile?.phone || '').replace(/\D/g, '').slice(-10), name: profile?.fullName },
@@ -175,7 +218,7 @@ const Finance = ({ studentId, profile }) => {
           try {
             await addDoc(collection(db, 'transactions'), {
               studentId,
-              studentName: profile?.linkedStudentName,
+              studentName: childName,
               amount: pending,
               status: 'PAID',
               paymentMode: 'UPI',
@@ -185,7 +228,7 @@ const Finance = ({ studentId, profile }) => {
               paidAt: serverTimestamp(),
             });
             toast.success('Payment successful! Receipt recorded.');
-            listTransactions({ studentId }).then(r => setList(r));
+            loadData();
           } catch { toast.success('Payment successful!'); }
         },
         modal: { ondismiss: () => setPaying(false) },
@@ -206,7 +249,7 @@ const Finance = ({ studentId, profile }) => {
   };
 
   return (
-    <SimplePage title="Finance" testId="parent-finance">
+    <SimplePage title="Fees" testId="parent-finance">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
         <div className="p-4 rounded-2xl bg-emerald-500/10"><div className="label-eyebrow text-emerald-600">Paid</div><div className="font-display font-black text-2xl tracking-tighter">₹{paid.toLocaleString()}</div></div>
         <div className="p-4 rounded-2xl bg-amber-500/10"><div className="label-eyebrow text-amber-600">Pending</div><div className="font-display font-black text-2xl tracking-tighter">₹{pending.toLocaleString()}</div></div>
@@ -226,13 +269,13 @@ const Finance = ({ studentId, profile }) => {
       )}
 
       {loading ? <div className="text-center text-muted-foreground py-4">Loading…</div> :
-        list.length === 0 ? <div className="text-center text-muted-foreground py-4">No fee records found</div> :
+        allItems.length === 0 ? <div className="text-center text-muted-foreground py-4">No fee records found</div> :
         <div className="space-y-2">
-          {list.map((t, i) => (
+          {allItems.map((t, i) => (
             <div key={t.id || i} className="flex items-center justify-between p-3 rounded-2xl border border-border">
               <div>
                 <div className="font-bold text-sm">{t.feeName || t.description || 'Fee'}</div>
-                <div className="label-eyebrow text-muted-foreground">{t.receiptNo} {t.paymentMode ? `· ${t.paymentMode}` : ''}</div>
+                <div className="label-eyebrow text-muted-foreground">{t.receiptNo} {t.paymentMode ? `· ${t.paymentMode}` : ''}{t.source === 'category' ? '· Due' : ''}</div>
               </div>
               <div className="flex items-center gap-3">
                 <div className="font-display font-black tracking-tighter">₹{(t.amount || 0).toLocaleString()}</div>
@@ -246,20 +289,23 @@ const Finance = ({ studentId, profile }) => {
   );
 };
 
-// ─── Attendance (real data from Firestore) ────────────────────────────────────
-const Attendance = ({ studentId, student }) => {
+// ─── Attendance (real data from Firestore for active child) ───────────────────
+const Attendance = () => {
+  const { activeChild } = useParentChild();
+  const studentId = activeChild?.id;
+  const className = activeChild?.className;
   const [summary, setSummary] = useState({ present: 0, absent: 0, late: 0, total: 0, pct: 0 });
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!studentId) { setLoading(false); return; }
+    setLoading(true);
     Promise.all([
       getStudentAttendanceSummary(studentId),
-      listAttendance({ className: student?.className }),
+      listAttendance({ className }),
     ]).then(([sum, atList]) => {
       setSummary(sum);
-      // Build per-date record for this student
       const rows = atList.map(doc => ({
         date: doc.date, status: (doc.records || {})[studentId],
         className: doc.className, section: doc.section,
@@ -267,7 +313,7 @@ const Attendance = ({ studentId, student }) => {
       setRecords(rows);
       setLoading(false);
     });
-  }, [studentId, student?.className]);
+  }, [studentId, className]);
 
   const colorOf = (s) => s === 'PRESENT' ? 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30'
     : s === 'ABSENT' ? 'bg-rose-500/15 text-rose-600 border-rose-500/30'
@@ -317,8 +363,72 @@ const Attendance = ({ studentId, student }) => {
   );
 };
 
+// ─── Diary page — reads entries for active child's class ──────────────────────
+const ParentDiaryPage = () => {
+  const { activeChild } = useParentChild();
+  const studentClass = activeChild?.className || '';
+  const studentSection = activeChild?.section || '';
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    listDiaryEntries({ className: studentClass || undefined }).then(data => {
+      setEntries(data);
+      setLoading(false);
+    });
+  }, [studentClass]);
+
+  // Filter by section if available
+  const visible = entries.filter(d =>
+    (!studentClass || d.className === studentClass) &&
+    (!studentSection || d.section === studentSection || !d.section)
+  );
+
+  return (
+    <SimplePage title="Class Diary" testId="parent-diary">
+      {studentClass && (
+        <div className="mb-4 flex items-center gap-2">
+          <span className="px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-600 label-eyebrow">
+            Class {studentClass}{studentSection ? `-${studentSection}` : ''} · {activeChild?.name || 'Student'}
+          </span>
+        </div>
+      )}
+      {loading ? (
+        <div className="text-center py-8 text-muted-foreground">Loading diary…</div>
+      ) : visible.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground text-sm">
+          No diary entries yet for Class {studentClass || "your child's class"}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {visible.map((d, i) => (
+            <motion.div key={d.id || i} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+              className="p-4 rounded-2xl border border-border">
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <BookMarked className="h-4 w-4 text-indigo-500" />
+                <span className="font-bold text-sm">{d.author}</span>
+                <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary label-eyebrow text-[10px]">{d.className}{d.section ? `-${d.section}` : ''}</span>
+                <span className="label-eyebrow text-muted-foreground">{d.date}</span>
+              </div>
+              {d.note && <p className="text-sm mt-1">{d.note}</p>}
+              {d.homework && (
+                <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                  <div className="label-eyebrow text-amber-600 mb-1">Homework</div>
+                  <p className="text-sm">{d.homework}</p>
+                </div>
+              )}
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </SimplePage>
+  );
+};
+
 // ─── CRM — raise/track tickets ────────────────────────────────────────────────
-const Support = ({ profile }) => {
+const Support = () => {
+  const { profile } = useAuth();
   const [tickets, setTickets] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', priority: 'MEDIUM', category: 'General' });
@@ -348,7 +458,6 @@ const Support = ({ profile }) => {
       setTickets(p => [ticket, ...p]);
       toast.success(`Ticket ${ticket.ticketNo} raised`);
       setShowForm(false); setForm({ title: '', description: '', priority: 'MEDIUM', category: 'General' });
-      // Notify admin
       try {
         await addNotification({
           userId: 'admin',
@@ -428,7 +537,9 @@ const Support = ({ profile }) => {
 };
 
 // ─── Messages — contact teachers ──────────────────────────────────────────────
-const Messages = ({ profile }) => {
+const Messages = () => {
+  const { profile } = useAuth();
+  const { activeChild } = useParentChild();
   const [employees, setEmployees] = useState([]);
   const [messages, setMessages] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -440,8 +551,7 @@ const Messages = ({ profile }) => {
   useEffect(() => {
     Promise.all([listEmployees({ status: 'ACTIVE' }), listMessages({ senderId: myId }), listMessages({ recipientId: myId })])
       .then(([emps, sent, received]) => {
-        // Filter to teachers of the child's class when possible
-        const childClass = profile?.linkedStudentClass;
+        const childClass = activeChild?.className || profile?.linkedStudentClass;
         const relevant = childClass
           ? emps.filter(e => {
               const teachesThisClass = (e.classes || '').includes(childClass) || e.className === childClass || e.classTeacherOf?.startsWith(childClass);
@@ -453,7 +563,7 @@ const Messages = ({ profile }) => {
           .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
         setMessages(all); setLoading(false);
       });
-  }, [myId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [myId, activeChild?.className]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSend = async () => {
     if (!selected) return toast.error('Select a teacher');
@@ -480,11 +590,9 @@ const Messages = ({ profile }) => {
             {employees.filter(e => e.department === 'Teaching' || e.designation?.toLowerCase().includes('teacher') || e.role === 'TEACHER').map(e => (
               <option key={e.id} value={e.id}>{e.fullName} {e.designation ? `(${e.designation})` : ''}</option>
             ))}
-            {employees.filter(e => !e.department?.includes('Teaching') && !e.designation?.toLowerCase().includes('teacher')).length > 0 && (
-              employees.filter(e => !e.designation?.toLowerCase().includes('teacher')).map(e => (
-                <option key={e.id} value={e.id}>{e.fullName} — {e.department}</option>
-              ))
-            )}
+            {employees.filter(e => !e.designation?.toLowerCase().includes('teacher')).map(e => (
+              <option key={e.id} value={e.id}>{e.fullName} — {e.department}</option>
+            ))}
           </select>
         </div>
         <div className="flex gap-2">
@@ -520,7 +628,7 @@ const Messages = ({ profile }) => {
   );
 };
 
-// ─── Welcome splash (shown once per session when parent opens dashboard) ──────
+// ─── Welcome splash ───────────────────────────────────────────────────────────
 function WelcomeSplash({ name, onDone }) {
   useEffect(() => {
     const t = setTimeout(onDone, 3000);
@@ -552,21 +660,18 @@ function WelcomeSplash({ name, onDone }) {
   );
 }
 
-// ─── Parent Home ─────────────────────────────────────────────────────────────
+// ─── Parent Home ──────────────────────────────────────────────────────────────
 function ParentHome() {
   const navigate = useNavigate();
   const { profile } = useAuth();
+  const { activeChild, linkedStudents, childIdx, setChildIdx } = useParentChild();
   const [child, setChild] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
-  // Multi-child: index of currently selected child
-  const [childIdx, setChildIdx] = useState(0);
-  const linkedStudents = profile?.linkedStudents || (profile?.linkedStudentId ? [{ id: profile.linkedStudentId, name: profile.linkedStudentName, className: profile.linkedStudentClass, section: profile.section }] : []);
-  const activeChild = linkedStudents[childIdx] || null;
 
   useEffect(() => {
     const loadChild = async () => {
-      const studentId = activeChild?.id || profile?.linkedStudentId;
+      const studentId = activeChild?.id;
       if (studentId) {
         const s = await getStudent(studentId);
         setChild(s);
@@ -574,9 +679,8 @@ function ParentHome() {
       setLoading(false);
     };
     loadChild();
-  }, [activeChild?.id, profile?.linkedStudentId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeChild?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Show welcome splash only once per login session (not on every navigation)
   useEffect(() => {
     if (!profile) return;
     const key = `stpauls_welcome_shown_${profile.phone || profile.fullName}`;
@@ -586,7 +690,7 @@ function ParentHome() {
     }
   }, [profile?.phone]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const avatar = `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(child?.fullName || profile?.displayName || 'Aanya')}`;
+  const avatar = `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(child?.fullName || activeChild?.name || 'Aanya')}`;
   const parentName = profile?.displayName || profile?.fullName || 'Parent';
 
   return (
@@ -597,115 +701,136 @@ function ParentHome() {
         )}
       </AnimatePresence>
 
-    <div className="space-y-6" data-testid="parent-dashboard">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tighter uppercase">Parent Portal</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Welcome, {parentName} · Stay connected with your child's journey.
-          </p>
+      <div className="space-y-6" data-testid="parent-dashboard">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tighter uppercase">Parent Portal</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Welcome, {parentName} · Stay connected with your child's journey.
+            </p>
+          </div>
         </div>
-      </div>
 
-      {/* Multi-child switcher */}
-      {linkedStudents.length > 1 && (
-        <div className="flex gap-2 flex-wrap">
-          <span className="label-eyebrow text-muted-foreground self-center">Switch Child:</span>
-          {linkedStudents.map((c, i) => (
-            <button key={c.id} onClick={() => { setChildIdx(i); setLoading(true); }}
-              className={`px-4 py-2 rounded-2xl label-eyebrow text-xs border transition-all ${childIdx === i ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted border-border text-muted-foreground'}`}>
-              {c.name} · Class {c.className}{c.section ? `-${c.section}` : ''}
-            </button>
-          ))}
-        </div>
-      )}
+        {/* Multi-child switcher — shown in home too for visual context */}
+        {linkedStudents.length > 1 && (
+          <div className="flex gap-2 flex-wrap">
+            <span className="label-eyebrow text-muted-foreground self-center">Viewing:</span>
+            {linkedStudents.map((c, i) => (
+              <button key={c.id} onClick={() => { setChildIdx(i); setLoading(true); }}
+                className={`px-4 py-2 rounded-2xl label-eyebrow text-xs border transition-all ${childIdx === i ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted border-border text-muted-foreground'}`}>
+                {c.name} · Class {c.className}{c.section ? `-${c.section}` : ''}
+              </button>
+            ))}
+          </div>
+        )}
 
-      {loading ? (
-        <div className="text-center py-8 text-muted-foreground">Loading your child's data…</div>
-      ) : (
-        <>
-          {/* Student banner */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            <motion.div whileHover={{ y: -3 }} className="lg:col-span-2 relative rounded-[2rem] p-6 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 text-white overflow-hidden">
-              <div className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-              <div className="relative flex flex-col sm:flex-row gap-5 items-start sm:items-center">
-                <img src={avatar} alt="avatar" className="h-24 w-24 rounded-3xl bg-white/20 ring-4 ring-white/20" />
-                <div className="flex-1">
-                  <div className="label-eyebrow text-white/70">Your Child</div>
-                  <div className="font-display font-black text-3xl tracking-tighter mt-1">{child?.fullName || profile?.linkedStudentName || 'Student'}</div>
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    {child?.admissionNo && <span className="px-3 py-1 rounded-full bg-white/15 label-eyebrow">{child.admissionNo}</span>}
-                    {child?.className && <span className="px-3 py-1 rounded-full bg-white/15 label-eyebrow">Class {child.className}-{child.section}</span>}
-                    {!child && profile?.linkedStudentClass && <span className="px-3 py-1 rounded-full bg-white/15 label-eyebrow">Class {profile.linkedStudentClass}</span>}
+        {loading ? (
+          <div className="text-center py-8 text-muted-foreground">Loading your child's data…</div>
+        ) : (
+          <>
+            {/* Student banner */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <motion.div whileHover={{ y: -3 }} className="lg:col-span-2 relative rounded-[2rem] p-6 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 text-white overflow-hidden">
+                <div className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+                <div className="relative flex flex-col sm:flex-row gap-5 items-start sm:items-center">
+                  <img src={avatar} alt="avatar" className="h-24 w-24 rounded-3xl bg-white/20 ring-4 ring-white/20" />
+                  <div className="flex-1">
+                    <div className="label-eyebrow text-white/70">Your Child</div>
+                    <div className="font-display font-black text-3xl tracking-tighter mt-1">{child?.fullName || activeChild?.name || 'Student'}</div>
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {child?.admissionNo && <span className="px-3 py-1 rounded-full bg-white/15 label-eyebrow">{child.admissionNo}</span>}
+                      {child?.className && <span className="px-3 py-1 rounded-full bg-white/15 label-eyebrow">Class {child.className}-{child.section}</span>}
+                      {!child && activeChild?.className && <span className="px-3 py-1 rounded-full bg-white/15 label-eyebrow">Class {activeChild.className}</span>}
+                    </div>
+                    <a href={getWhatsAppUrl('+919000000000', `Hello, I am parent of ${child?.fullName || 'my child'}`)}
+                      target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-2xl bg-white text-indigo-700 label-eyebrow hover:bg-white/90">
+                      <Phone className="h-3.5 w-3.5" /> Contact Office
+                    </a>
                   </div>
-                  <a href={getWhatsAppUrl('+919000000000', `Hello, I am parent of ${child?.fullName || 'my child'}`)}
-                    target="_blank" rel="noreferrer"
-                    className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-2xl bg-white text-indigo-700 label-eyebrow hover:bg-white/90">
-                    <Phone className="h-3.5 w-3.5" /> Contact Office
-                  </a>
+                </div>
+              </motion.div>
+
+              <div className="glass-morphism rounded-[2rem] p-5">
+                <div className="label-eyebrow text-muted-foreground">Quick Info</div>
+                <div className="mt-4 space-y-3">
+                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Academic Year</span><span className="font-bold">{child?.academicYear || '2025-26'}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Section</span><span className="font-bold">{child?.section || activeChild?.section || '—'}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">House</span><span className="font-bold">{child?.house || '—'}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Medium</span><span className="font-bold">{child?.mediumOfInstruction || 'English'}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Blood Group</span><span className="font-bold">{child?.bloodGroup || '—'}</span></div>
                 </div>
               </div>
-            </motion.div>
+            </div>
 
-            <div className="glass-morphism rounded-[2rem] p-5">
-              <div className="label-eyebrow text-muted-foreground">Quick Info</div>
-              <div className="mt-4 space-y-3">
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Academic Year</span><span className="font-bold">{child?.academicYear || '2025-26'}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Section</span><span className="font-bold">{child?.section || '—'}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">House</span><span className="font-bold">{child?.house || '—'}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Medium</span><span className="font-bold">{child?.mediumOfInstruction || 'English'}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Blood Group</span><span className="font-bold">{child?.bloodGroup || '—'}</span></div>
+            {/* Module grid */}
+            <div>
+              <div className="label-eyebrow text-muted-foreground mb-3">Quick Access</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {MODULES.map((m, i) => (
+                  <motion.button key={m.key} data-testid={`parent-module-${m.key}`} onClick={() => navigate(m.key)}
+                    initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+                    whileHover={{ y: -5, scale: 1.03 }} whileTap={{ scale: 0.98 }}
+                    className="glass-morphism rounded-[1.75rem] p-4 text-left flex flex-col gap-3">
+                    <div className={`h-11 w-11 rounded-2xl ${m.tint} grid place-items-center`}><m.icon className="h-5 w-5" /></div>
+                    <div>
+                      <div className="font-bold text-sm leading-tight">{m.label}</div>
+                      <div className="label-eyebrow text-muted-foreground mt-1">Open →</div>
+                    </div>
+                  </motion.button>
+                ))}
               </div>
             </div>
-          </div>
-
-          {/* Module grid */}
-          <div>
-            <div className="label-eyebrow text-muted-foreground mb-3">Quick Access</div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {MODULES.map((m, i) => (
-                <motion.button key={m.key} data-testid={`parent-module-${m.key}`} onClick={() => navigate(m.key)}
-                  initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                  whileHover={{ y: -5, scale: 1.03 }} whileTap={{ scale: 0.98 }}
-                  className="glass-morphism rounded-[1.75rem] p-4 text-left flex flex-col gap-3">
-                  <div className={`h-11 w-11 rounded-2xl ${m.tint} grid place-items-center`}><m.icon className="h-5 w-5" /></div>
-                  <div>
-                    <div className="font-bold text-sm leading-tight">{m.label}</div>
-                    <div className="label-eyebrow text-muted-foreground mt-1">Open →</div>
-                  </div>
-                </motion.button>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
+          </>
+        )}
+      </div>
     </>
   );
 }
 
-// ─── Router wrapper — passes studentId to sub-pages ──────────────────────────
+// ─── Root router — owns the active-child state ────────────────────────────────
 export default function ParentDashboard() {
   const { profile } = useAuth();
-  const studentId = profile?.linkedStudentId;
-  const [student, setStudent] = useState(null);
-  useEffect(() => { if (studentId) getStudent(studentId).then(setStudent); }, [studentId]);
+
+  // Build linked students list from profile
+  const linkedStudents = profile?.linkedStudents ||
+    (profile?.linkedStudentId ? [{
+      id: profile.linkedStudentId,
+      name: profile.linkedStudentName,
+      className: profile.linkedStudentClass,
+      section: profile.section,
+      admissionNo: profile.admissionNo,
+    }] : []);
+
+  // Persist selected child index in localStorage so it survives navigation
+  const [childIdx, setChildIdxState] = useState(() => {
+    try { return Number(localStorage.getItem('stpauls_child_idx') || '0'); } catch { return 0; }
+  });
+
+  const setChildIdx = (idx) => {
+    setChildIdxState(idx);
+    try { localStorage.setItem('stpauls_child_idx', String(idx)); } catch {}
+  };
+
+  const activeChild = linkedStudents[childIdx] || linkedStudents[0] || null;
 
   return (
-    <Routes>
-      <Route index element={<ParentHome />} />
-      <Route path="announcements" element={<Announcements />} />
-      <Route path="result"        element={<Result studentId={studentId} />} />
-      <Route path="attendance"    element={<Attendance studentId={studentId} student={student} />} />
-      <Route path="finance"       element={<Finance studentId={studentId} profile={profile} />} />
-      <Route path="support"       element={<Support profile={profile} />} />
-      <Route path="messages"      element={<Messages profile={profile} />} />
-      <Route path="diary"         element={<Diary />} />
-      <Route path="exam-timetable" element={<ExamTimetable />} />
-      <Route path="messaging"     element={<TeacherMessaging />} />
-      <Route path="gps"           element={<GPSTracking />} />
-      <Route path="online-exams"  element={<OnlineExams />} />
-      <Route path="gallery"       element={<EventGallery />} />
-    </Routes>
+    <ParentChildContext.Provider value={{ activeChild, linkedStudents, childIdx, setChildIdx }}>
+      <Routes>
+        <Route index element={<ParentHome />} />
+        <Route path="announcements" element={<Announcements />} />
+        <Route path="result"        element={<Result />} />
+        <Route path="attendance"    element={<Attendance />} />
+        <Route path="finance"       element={<Finance />} />
+        <Route path="support"       element={<Support />} />
+        <Route path="messages"      element={<Messages />} />
+        <Route path="diary"         element={<ParentDiaryPage />} />
+        <Route path="exam-timetable" element={<ExamTimetable />} />
+        <Route path="messaging"     element={<TeacherMessaging />} />
+        <Route path="gps"           element={<GPSTracking />} />
+        <Route path="online-exams"  element={<OnlineExams />} />
+        <Route path="gallery"       element={<EventGallery />} />
+      </Routes>
+    </ParentChildContext.Provider>
   );
 }

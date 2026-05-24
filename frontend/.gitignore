@@ -21,3 +21,18 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# ── Capacitor / Android ──────────────────────────────────────────────────────
+# Play Store signing keys — NEVER commit these!
+*.jks
+*.keystore
+android/stpauls-release.jks
+
+# Google services config (contains Firebase API keys)
+# Add the real file from Firebase Console manually — don't commit it
+android/app/google-services.json
+
+# Android build outputs
+android/.gradle/
+android/app/build/
+android/build/
