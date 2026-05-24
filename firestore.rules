@@ -1,10 +1,154 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ── DEVELOPMENT RULES — Wide open, no auth required ──────────────────────
-    // TODO: After setting up Firebase Phone Auth properly, tighten these rules.
+
+    // ─── Helper functions ────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    // Role is stored in the user's Firestore profile (users/{uid}.role)
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(uid())).data.role;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && userRole() == 'SCHOOL_ADMIN';
+    }
+
+    function isStaff() {
+      return isSignedIn() && (userRole() == 'STAFF' || userRole() == 'SCHOOL_ADMIN' || userRole() == 'TEACHER' || userRole() == 'PRINCIPAL' || userRole() == 'VICE_PRINCIPAL' || userRole() == 'ACCOUNTANT' || userRole() == 'LIBRARIAN' || userRole() == 'SPORTS_COACH' || userRole() == 'COUNSELOR' || userRole() == 'COORDINATOR' || userRole() == 'LAB_ASSISTANT' || userRole() == 'TRANSPORT_STAFF' || userRole() == 'SUPPORT_STAFF' || userRole() == 'NON_TEACHING_STAFF');
+    }
+
+    function isParent() {
+      return isSignedIn() && userRole() == 'PARENT';
+    }
+
+    // ─── Users collection (login profiles) ───────────────────────────────────
+    // Users can read their own profile. Admins can read all.
+    // Only the backend (via service account) or the auth flow can write.
+    match /users/{userId} {
+      allow read: if isSignedIn() && (uid() == userId || isAdmin());
+      allow create: if isSignedIn() && uid() == userId;
+      // Users can update their own non-sensitive fields only
+      allow update: if isSignedIn() && uid() == userId
+                    && !request.resource.data.diff(resource.data).affectedKeys()
+                       .hasAny(['role', 'tenantId', 'uid']);
+      allow delete: if isAdmin();
+    }
+
+    // ─── Students ─────────────────────────────────────────────────────────────
+    // Admin & Staff: full read/write
+    // Parent: can only read their own children (matched by phone)
+    match /students/{studentId} {
+      allow read: if isAdmin() || isStaff()
+                  || (isParent() && resource.data.fatherPhone == request.auth.token.phone_number
+                      || resource.data.motherPhone == request.auth.token.phone_number
+                      || resource.data.guardianPhone == request.auth.token.phone_number);
+      allow create: if isAdmin() || isStaff();
+      allow update: if isAdmin() || isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Employees ────────────────────────────────────────────────────────────
+    // Admin: full read/write
+    // Staff: can read all employees (for directory), update only their own record
+    // Parent: no access
+    match /employees/{employeeId} {
+      allow read: if isAdmin() || isStaff();
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+                    || (isStaff() && uid() == employeeId
+                        && !request.resource.data.diff(resource.data).affectedKeys()
+                           .hasAny(['role', 'salary', 'tenantId']));
+      allow delete: if isAdmin();
+    }
+
+    // ─── Attendance ───────────────────────────────────────────────────────────
+    match /attendance/{docId} {
+      allow read: if isAdmin() || isStaff()
+                  || (isParent() && resource.data.studentParentPhone == request.auth.token.phone_number);
+      allow create, update: if isAdmin() || isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Fees / Payments ─────────────────────────────────────────────────────
+    match /fees/{feeId} {
+      allow read: if isAdmin() || isStaff()
+                  || (isParent() && resource.data.parentPhone == request.auth.token.phone_number);
+      allow create, update: if isAdmin() || isStaff();
+      allow delete: if isAdmin();
+    }
+
+    match /transactions/{txnId} {
+      allow read: if isAdmin() || isStaff()
+                  || (isParent() && resource.data.parentPhone == request.auth.token.phone_number);
+      allow create: if isAdmin() || isStaff() || isParent();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Timetable / Academics ────────────────────────────────────────────────
+    match /timetable/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isStaff();
+    }
+
+    match /exams/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isStaff();
+    }
+
+    match /grades/{docId} {
+      allow read: if isAdmin() || isStaff()
+                  || (isParent() && resource.data.parentPhone == request.auth.token.phone_number);
+      allow write: if isAdmin() || isStaff();
+    }
+
+    match /homework/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isStaff();
+    }
+
+    // ─── Notices / Announcements ──────────────────────────────────────────────
+    match /notices/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isStaff();
+    }
+
+    match /announcements/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isStaff();
+    }
+
+    // ─── Leave requests ───────────────────────────────────────────────────────
+    match /leaves/{leaveId} {
+      allow read: if isAdmin() || (isStaff() && resource.data.employeeId == uid());
+      allow create: if isStaff();
+      allow update: if isAdmin()
+                    || (isStaff() && resource.data.employeeId == uid()
+                        && resource.data.status == 'PENDING');
+      allow delete: if isAdmin();
+    }
+
+    // ─── OTP store (temp, backend-written) ────────────────────────────────────
+    match /otp_store/{phone} {
+      allow read, write: if false; // Only backend service account can access
+    }
+
+    // ─── School settings ──────────────────────────────────────────────────────
+    match /settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ─── Deny everything else ─────────────────────────────────────────────────
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

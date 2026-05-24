@@ -425,6 +425,7 @@ export default function LoginPage() {
           </motion.div>
         </div>
       </div>
+      <div id="recaptcha-container"></div>
     </div>
   );
 }

@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import {
   onAuthStateChanged,
   signOut as fbSignOut,
+  RecaptchaVerifier,
+  signInWithPhoneNumber
 } from 'firebase/auth';
 import {
   doc, getDoc, setDoc, query, collection, where, getDocs, serverTimestamp,
@@ -9,8 +11,8 @@ import {
 import { auth, db, isFirebaseConfigured } from '../lib/firebase';
 import { otpAPI } from '../services/api';
 
-// ─── Admin phone number (E.164 format) ───────────────────────────────────────
-const ADMIN_PHONE = '+911234567890';
+// ─── Admin phone numbers (E.164 format) — add more numbers to this list ────────
+const ADMIN_PHONES = ['+918897245345', '+916304300354'];
 const TENANT_ID = process.env.REACT_APP_TENANT_ID || 'stpauls';
 
 const AuthContext = createContext(null);
@@ -20,8 +22,8 @@ async function resolvePhoneAsRole(phone, loginRole) {
   // Always check admin first — no Firestore needed
   if (loginRole === 'admin') {
     const digits = phone.replace(/\D/g, '');
-    const adminDigits = ADMIN_PHONE.replace(/\D/g, '');
-    if (digits.endsWith(adminDigits.slice(-10))) {
+    const isAdmin = ADMIN_PHONES.some(ap => digits.endsWith(ap.replace(/\D/g, '').slice(-10)));
+    if (isAdmin) {
       return { role: 'SCHOOL_ADMIN', tenantId: TENANT_ID, fullName: 'School Administrator', phone, displayName: 'Admin' };
     }
     return null;
@@ -285,7 +287,26 @@ export function AuthProvider({ children }) {
   // Map login-screen role id → Firestore role string
   const ROLE_MAP = { admin: 'SCHOOL_ADMIN', staff: 'STAFF', parent: 'PARENT' };
 
-  // ── Step 1: Send OTP via backend (MSG91/Fast2SMS — no reCAPTCHA needed) ──
+  // ── Step 1: Send OTP via Firebase Phone Auth ──
+  const setupRecaptcha = () => {
+    if (!window.recaptchaVerifier) {
+      window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        size: 'invisible',
+        // reCAPTCHA Enterprise site key created for stpauls-erp
+        'enterprise-site-key': '6LcdKPosAAAAAHR3TZq25ebyo5vTm51nZXhPfPMN',
+        callback: () => {
+          // reCAPTCHA solved
+        },
+        'expired-callback': () => {
+          if (window.recaptchaVerifier) {
+            window.recaptchaVerifier.clear();
+            window.recaptchaVerifier = null;
+          }
+        }
+      });
+    }
+  };
+
   const sendOTP = useCallback(async (rawPhone, selectedRole = null) => {
     setAuthError(null);
     const digits = rawPhone.replace(/\D/g, '');
@@ -298,41 +319,47 @@ export function AuthProvider({ children }) {
     selectedRoleRef.current = selectedRole;  // remember which role the user picked
 
     try {
-      const res = await otpAPI.sendOTP(phone);
+      setupRecaptcha();
+      const appVerifier = window.recaptchaVerifier;
+      const confirmationResult = await signInWithPhoneNumber(auth, phone, appVerifier);
+      window.confirmationResult = confirmationResult;
+
       pendingPhoneRef.current = phone;
       localStorage.setItem('stpauls_pending_phone', phone);
-      const devOtp = res.data?.dev ? res.data?.otp : null;
-      const channel = res.data?.channel || 'sms';  // 'whatsapp' | 'sms'
-      return { ok: true, phone, devOtp, channel };
+      return { ok: true, phone, channel: 'sms' };
     } catch (e) {
-      const detail = e?.response?.data?.detail || e?.message || 'Failed to send OTP. Please try again.';
+      if (window.recaptchaVerifier) {
+        try {
+          window.recaptchaVerifier.render().then(widgetId => window.grecaptcha.reset(widgetId));
+        } catch (err) {}
+      }
+      const detail = e?.message || 'Failed to send OTP. Please try again.';
       setAuthError(detail);
       return { ok: false, error: detail };
     }
   }, []);
 
-  // ── Step 2: Verify OTP via backend, then resolve role from Firestore ──
+  // ── Step 2: Verify OTP via Firebase, then resolve role from Firestore ──
   const verifyOTP = useCallback(async (otp, phone) => {
     setAuthError(null);
     const targetPhone = phone || pendingPhoneRef.current || localStorage.getItem('stpauls_pending_phone');
 
-    if (!targetPhone) {
+    if (!targetPhone || !window.confirmationResult) {
       return { ok: false, error: 'Session expired. Please request OTP again.' };
     }
 
     try {
-      const res = await otpAPI.verifyOTP(targetPhone, otp);
-      if (!res.data?.verified) {
-        return { ok: false, error: 'OTP verification failed. Please try again.' };
-      }
+      const result = await window.confirmationResult.confirm(otp);
+      const fbUser = result.user;
+      const verifiedPhone = fbUser.phoneNumber || targetPhone;
 
-      const verifiedPhone = res.data.phone || targetPhone;
       const loginRole = selectedRoleRef.current; // 'admin' | 'staff' | 'parent'
 
       // Strict role validation: phone must match the selected role
       const effectiveRole = loginRole || 'admin';
       const roleProfile = await resolvePhoneAsRole(verifiedPhone, effectiveRole);
       if (!roleProfile) {
+        await fbSignOut(auth); // Sign out unauthorized user
         const digits10 = verifiedPhone.replace(/\D/g, '').slice(-10);
         const errors = {
           admin:  'This is not the admin number. Only the registered admin phone can use Admin login.',
@@ -343,7 +370,7 @@ export function AuthProvider({ children }) {
         return { ok: false, error: errors[effectiveRole] || 'Phone number not recognized for this role.' };
       }
 
-      const uid = `phone_${verifiedPhone.replace(/\D/g, '')}`;
+      const uid = fbUser.uid;
       const u = { uid, phone: verifiedPhone };
       const p = roleProfile;
       selectedRoleRef.current = null;
@@ -352,7 +379,7 @@ export function AuthProvider({ children }) {
       localStorage.setItem('stpauls_session', JSON.stringify({ u, p }));
       localStorage.removeItem('stpauls_pending_phone');
       pendingPhoneRef.current = null;
-      selectedRoleRef.current = null;
+      window.confirmationResult = null;
 
       await upsertUserProfile(uid, { ...p, uid });
 
@@ -360,7 +387,9 @@ export function AuthProvider({ children }) {
       setProfile(p);
       return { ok: true, profile: p };
     } catch (e) {
-      const detail = e?.response?.data?.detail || e?.message || 'Incorrect OTP. Please try again.';
+      const detail = e?.message?.includes('auth/invalid-verification-code')
+        ? 'Incorrect OTP. Please try again.'
+        : e?.message || 'Incorrect OTP. Please try again.';
       setAuthError(detail);
       return { ok: false, error: detail };
     }
