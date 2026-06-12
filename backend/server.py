@@ -59,6 +59,40 @@ app.include_router(attendance.router,    prefix="/api/attendance",    tags=["Att
 async def health():
     return {"status": "ok", "service": "stpauls-erp-backend", "version": "1.0.0", "docs": "/docs"}
 
+import requests
+from fastapi import Request, Response
+
+@app.api_route("/iclock/{path:path}", methods=["GET", "POST"])
+async def iclock_proxy(path: str, request: Request):
+    """Proxy all biometric ADMS traffic to Firebase Cloud Function"""
+    url = f"https://us-central1-stpauls-erp.cloudfunctions.net/iclock/iclock/{path}"
+    
+    # Read raw body
+    body = await request.body()
+    
+    try:
+        # Forward request exactly as received
+        resp = requests.request(
+            method=request.method,
+            url=url,
+            params=request.query_params,
+            data=body,
+            headers={"Content-Type": request.headers.get("content-type", "text/plain")}
+        )
+        
+        # Return exact response from Firebase
+        return Response(
+            content=resp.text,
+            status_code=resp.status_code,
+            headers={
+                "Content-Type": "text/plain",
+                "Server": "Microsoft-IIS/7.5"
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error forwarding ADMS request: {str(e)}")
+        return Response(content="OK", status_code=200, media_type="text/plain")
+
 @app.get("/", include_in_schema=False)
 async def root():
     """Redirect root URL to interactive API docs."""
