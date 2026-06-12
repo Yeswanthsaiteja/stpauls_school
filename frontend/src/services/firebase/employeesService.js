@@ -32,7 +32,21 @@ export async function listEmployees({ department, status } = {}) {
 
 export async function addEmployee(data) {
   if (!guard()) return null;
-  const empNo = `EMP${Date.now().toString().slice(-6)}`;
+  let empNo = data.employeeId;
+  if (!empNo) {
+    const list = await fetchCol('employees');
+    let max = 0;
+    for (const e of list) {
+      if (e.employeeId && e.employeeId.toLowerCase().startsWith('stpemp')) {
+        const num = parseInt(e.employeeId.toLowerCase().replace('stpemp', ''), 10);
+        if (!isNaN(num) && num > max) max = num;
+      } else if (e.employeeId && e.employeeId.startsWith('SPH')) {
+        const num = parseInt(e.employeeId.replace('SPH', ''), 10);
+        if (!isNaN(num) && num > max) max = num;
+      }
+    }
+    empNo = `STPEMP${String(max + 1).padStart(4, '0')}`;
+  }
   const payload = { ...data, employeeId: empNo, tenantId: TENANT_ID, status: 'ACTIVE', createdAt: serverTimestamp() };
   return safe(async () => { const r = await addDoc(collection(db, 'employees'), payload); return { id: r.id, ...payload }; }, null);
 }
@@ -93,4 +107,14 @@ export async function rejoinEmployee(id, patch = {}) {
     ...patch,
     updatedAt: serverTimestamp(),
   }));
+}
+
+// ─── Bulk Add Employees ───────────────────────────────────────────────────────
+export async function bulkAddEmployees(rows) {
+  const results = [];
+  for (const r of rows) {
+    const result = await addEmployee(r);
+    if (result) results.push(result);
+  }
+  return results;
 }

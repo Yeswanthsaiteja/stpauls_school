@@ -35,7 +35,7 @@ export default function StudentRejoin() {
 
   const confirm = async () => {
     if (!picked) return;
-    setSaving(true);
+    if (saving) return; setSaving(true);
     const admNo = form.keepOldAdm ? picked.admissionNo : (form.newAdmissionNo || `STP${Date.now().toString().slice(-6)}`);
     await updateStudent(picked.id, {
       status: 'ACTIVE', admissionNo: admNo,
@@ -52,7 +52,7 @@ export default function StudentRejoin() {
 
   return (
     <div className="space-y-6 max-w-3xl" data-testid="student-rejoin">
-      <NavLink to=".." className="label-eyebrow text-primary">← Back to Students</NavLink>
+      <NavLink to="/dashboard/students" className="label-eyebrow text-primary">← Back to Students</NavLink>
       <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Student Rejoin</h1>
 
       <div className="glass-morphism rounded-[2rem] p-5">

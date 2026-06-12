@@ -3,12 +3,14 @@ import { motion } from 'framer-motion';
 import { TrendingUp, TrendingDown, IndianRupee, Wallet, ListChecks, MessageCircle, RefreshCw } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { listTransactions } from '../services/firebase/financeService';
 import { formatCurrency, getWhatsAppUrl } from '../lib/utils';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899'];
 
 export default function FinanceModule() {
+  const { t } = useTranslation();
   const [tx, setTx] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -41,10 +43,10 @@ export default function FinanceModule() {
     <div className="space-y-6" data-testid="finance-module">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tighter uppercase">Finance</h1>
+          <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tighter uppercase">{t('finance')}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Collected: <span className="font-display font-black text-foreground tracking-tighter text-lg">{formatCurrency(paid)}</span>
-            {' · '}Pending: <span className="font-display font-black text-amber-500 tracking-tighter">{formatCurrency(pending)}</span>
+            {t('collected')}: <span className="font-display font-black text-foreground tracking-tighter text-lg">{formatCurrency(paid)}</span>
+            {' · '}{t('pending')}: <span className="font-display font-black text-amber-500 tracking-tighter">{formatCurrency(pending)}</span>
           </p>
         </div>
         <button onClick={load} className="h-9 w-9 rounded-xl bg-muted grid place-items-center hover:bg-muted/80" title="Refresh">
@@ -55,10 +57,12 @@ export default function FinanceModule() {
       {/* Nav cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { icon: IndianRupee, label: 'Fee Setup',      sub: 'Structures · slabs',   color: 'from-indigo-500 to-violet-500',  to: '/dashboard/finance/setup' },
-          { icon: Wallet,      label: 'Fee Collection', sub: 'Receive · receipt',     color: 'from-emerald-500 to-teal-500',   to: '/dashboard/finance/collect' },
-          { icon: ListChecks,  label: 'Ledger',         sub: 'Income · expense',      color: 'from-amber-500 to-orange-500',   to: '/dashboard/finance/ledger' },
-          { icon: TrendingUp,  label: 'Payroll',        sub: 'Staff payslips',        color: 'from-rose-500 to-pink-500',      to: '/dashboard/finance/payroll' },
+          { icon: IndianRupee, label: t('feeSetup'),      sub: 'Structures · terms',   color: 'from-indigo-500 to-violet-500',  to: '/dashboard/finance/setup' },
+          { icon: Wallet,      label: t('feeCollection'), sub: 'Receive · receipt',     color: 'from-emerald-500 to-teal-500',   to: '/dashboard/finance/collect' },
+          { icon: ListChecks,  label: 'Fee Status',        sub: 'Class-wise · overdue',  color: 'from-cyan-500 to-blue-500',      to: '/dashboard/finance/status' },
+          { icon: ListChecks,  label: 'Fee Defaulters',    sub: 'Track dues · slips',    color: 'from-rose-500 to-pink-500',      to: '/dashboard/finance/defaulters' },
+          { icon: ListChecks,  label: t('ledger'),         sub: 'Income · expense',      color: 'from-amber-500 to-orange-500',   to: '/dashboard/finance/ledger' },
+          { icon: TrendingUp,  label: t('payroll'),        sub: 'Staff payslips',        color: 'from-fuchsia-500 to-purple-500',      to: '/dashboard/finance/payroll' },
         ].map((c) => (
           <motion.button onClick={() => navigate(c.to)} whileHover={{ y: -5, scale: 1.02 }} key={c.label}
             className="glass-morphism rounded-[2rem] p-5 text-left" data-testid={`finance-card-${c.label.split(' ').join('-')}`}>
@@ -72,7 +76,7 @@ export default function FinanceModule() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Pie chart */}
         <div className="glass-morphism rounded-[2rem] p-5 lg:col-span-1">
-          <div className="label-eyebrow text-muted-foreground mb-4">Category Distribution</div>
+          <div className="label-eyebrow text-muted-foreground mb-4">{t('categoryDistribution')}</div>
           {loading ? (
             <div className="h-[230px] flex items-center justify-center text-muted-foreground">Loading…</div>
           ) : (
@@ -105,7 +109,7 @@ export default function FinanceModule() {
 
         {/* Recent transactions from Firestore */}
         <div className="glass-morphism rounded-[2rem] p-5 lg:col-span-2">
-          <div className="label-eyebrow text-muted-foreground mb-4">Recent Transactions</div>
+          <div className="label-eyebrow text-muted-foreground mb-4">{t('recentTransactions')}</div>
           {loading ? (
             <div className="text-center text-muted-foreground py-8">Loading from Firestore…</div>
           ) : tx.length === 0 ? (
@@ -142,16 +146,16 @@ export default function FinanceModule() {
         <div className="lg:col-span-1 glass-morphism rounded-[2rem] p-5 relative overflow-hidden">
           <div className="absolute -bottom-12 -right-12 h-40 w-40 rounded-full bg-blue-500/15 blur-2xl" />
           <div className="relative">
-            <div className="label-eyebrow text-muted-foreground">Razorpay Integration</div>
-            <div className="font-display font-black text-2xl tracking-tighter mt-1">Online Fee Payments</div>
+            <div className="label-eyebrow text-muted-foreground">{t('razorpayIntegration')}</div>
+            <div className="font-display font-black text-2xl tracking-tighter mt-1">{t('onlineFeePayments')}</div>
             <p className="text-xs text-muted-foreground mt-2">Accept UPI, cards & netbanking. Auto-receipt to parents.</p>
             <a href="/dashboard/razorpay" className="mt-4 inline-flex items-center px-4 h-10 rounded-2xl bg-foreground text-background label-eyebrow" data-testid="razorpay-config-btn">Configure API Keys</a>
           </div>
         </div>
         <div className="lg:col-span-2 glass-morphism rounded-[2rem] p-5">
           <div className="flex items-center justify-between mb-4">
-            <div className="label-eyebrow text-muted-foreground">Pending Fee Reminders</div>
-            <button className="label-eyebrow text-primary">Send All</button>
+            <div className="label-eyebrow text-muted-foreground">{t('pendingFeeReminders')}</div>
+            <button className="label-eyebrow text-primary">{t('sendAll')}</button>
           </div>
           {defaulters.length === 0 ? (
             <div className="text-center text-muted-foreground py-4 text-sm">No pending fees</div>

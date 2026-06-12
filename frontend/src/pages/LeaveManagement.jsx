@@ -63,7 +63,7 @@ export default function LeaveManagement() {
   const submit = async () => {
     if (!form.startDate || !form.endDate) return toast.error('Dates required');
     if (!form.employeeId) return toast.error('Select employee');
-    setSubmitting(true);
+    if (submitting) return; setSubmitting(true);
     try {
       const emp = employees.find((e) => e.id === form.employeeId);
       await addLeaveRequest({

@@ -21,6 +21,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { listStudents, updateStudent } from '../services/firebase/studentsService';
 import { listEmployees, listLeaveRequests, addLeaveRequest } from '../services/firebase/employeesService';
 import { getAttendance, saveAttendance } from '../services/firebase/attendanceService';
+import { listHolidays } from '../services/firebase/holidaysService';
 import { listSubjects, listTopics, updateTopic, listClasses, listExamSetups, bulkSaveResults, listResults } from '../services/firebase/academicService';
 import { calcGrade } from '../lib/utils';
 import { listAnnouncements, sendMessage, subscribeMessages, listDiaryEntries, addDiaryEntry } from '../services/firebase/communicationService';
@@ -74,7 +75,7 @@ function StudentEditModal({ student, onClose, onSaved }) {
   const [form, setForm] = useState({ fullName: student.fullName, phoneNumber: student.phoneNumber || '', address: student.address || '' });
   const [saving, setSaving] = useState(false);
   const save = async () => {
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try { await updateStudent(student.id, form); onSaved({ ...student, ...form }); toast.success('Saved'); onClose(); }
     catch { toast.error('Save failed'); }
     setSaving(false);
@@ -259,9 +260,17 @@ function AttendanceTab({ assignments, students, staffName }) {
     s.status === 'ACTIVE' && selClass && s.className === selClass && s.section === selSection
   );
 
+  const [holiday, setHoliday] = useState(null);
+
   useEffect(() => {
     if (!selClass) return;
-    getAttendance(selClass, selSection, date).then(r => {
+    Promise.all([
+      getAttendance(selClass, selSection, date),
+      listHolidays()
+    ]).then(([r, hols]) => {
+      const hol = hols.find(h => h.date === date);
+      setHoliday(hol || null);
+
       if (r && Object.keys(r).length > 0) { setRecords(r); setExisting(true); }
       else {
         const init = {};
@@ -278,7 +287,7 @@ function AttendanceTab({ assignments, students, staffName }) {
 
   const save = async () => {
     if (!selClass) return toast.error('Select a class first');
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try {
       await saveAttendance(selClass, selSection, date, records, staffName || 'Staff');
       toast.success('Attendance saved!'); setExisting(true);
@@ -333,24 +342,38 @@ function AttendanceTab({ assignments, students, staffName }) {
           You are not assigned as class teacher. Admin can assign you in <strong>Academic → Classes & Sections</strong>.
         </div>
       )}
-      <div className="space-y-2">
-        {myStudents.map((s, i) => {
-          const status = records[s.id] || 'PRESENT';
-          return (
-            <div key={s.id || i} className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${colorOf(status)}`} onClick={() => toggle(s.id)}>
-              <div className="h-9 w-9 rounded-xl bg-white/20 grid place-items-center font-black text-sm flex-shrink-0">{i + 1}</div>
-              <div className="flex-1"><div className="font-bold text-sm">{s.fullName}</div><div className="text-xs opacity-70">{s.admissionNo}</div></div>
-              <span className="label-eyebrow font-black">{status}</span>
-            </div>
-          );
-        })}
-        {myStudents.length === 0 && <p className="text-center text-muted-foreground py-8 text-sm">No active students in your class</p>}
-      </div>
-      {myStudents.length > 0 && (
-        <button onClick={save} disabled={saving}
-          className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black uppercase tracking-widest text-[11px] flex items-center justify-center gap-2 disabled:opacity-50">
-          {saving ? <><RefreshCw className="h-4 w-4 animate-spin" />Saving…</> : <><Save className="h-4 w-4" />Save Attendance</>}
-        </button>
+      
+      {holiday ? (
+        <div className="glass-morphism rounded-[2rem] p-8 text-center border-indigo-500/30">
+          <div className="mx-auto w-12 h-12 rounded-full bg-indigo-500/10 grid place-items-center mb-4">
+            <span className="text-2xl">🎉</span>
+          </div>
+          <h3 className="font-display font-black text-2xl tracking-tighter text-indigo-500 mb-2">Today is a Holiday</h3>
+          <p className="text-muted-foreground">{holiday.name}</p>
+          <p className="text-xs text-muted-foreground mt-2 opacity-70">Attendance marking is disabled for holidays.</p>
+        </div>
+      ) : (
+        <>
+          <div className="space-y-2">
+            {myStudents.map((s, i) => {
+              const status = records[s.id] || 'PRESENT';
+              return (
+                <div key={s.id || i} className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${colorOf(status)}`} onClick={() => toggle(s.id)}>
+                  <div className="h-9 w-9 rounded-xl bg-white/20 grid place-items-center font-black text-sm flex-shrink-0">{i + 1}</div>
+                  <div className="flex-1"><div className="font-bold text-sm">{s.fullName}</div><div className="text-xs opacity-70">{s.admissionNo}</div></div>
+                  <span className="label-eyebrow font-black">{status}</span>
+                </div>
+              );
+            })}
+            {myStudents.length === 0 && <p className="text-center text-muted-foreground py-8 text-sm">No active students in your class</p>}
+          </div>
+          {myStudents.length > 0 && (
+            <button onClick={save} disabled={saving}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black uppercase tracking-widest text-[11px] flex items-center justify-center gap-2 disabled:opacity-50">
+              {saving ? <><RefreshCw className="h-4 w-4 animate-spin" />Saving…</> : <><Save className="h-4 w-4" />Save Attendance</>}
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -390,10 +413,13 @@ function MarksTab({ assignments, allStudents }) {
   const activeExam = allExams.find(e => e.id === examId) || applicableExams[0];
   const activeExamName = activeExam ? (activeExam.examType === 'Other' ? activeExam.customName : activeExam.examType) : '';
 
+  const isClassTeacherForSelected = myClasses.includes(className);
+
   // Subjects this teacher is assigned to for the selected class (teacherId stores fullName)
   const mySubjectNames = new Set(teachingSubjects.map(s => s.name));
   const classSubjects = allSubjectsData.filter(s =>
     s.className === className && (
+      isClassTeacherForSelected ||
       teachingSubjects.some(ts => ts.id === s.id) || // exact match by id
       mySubjectNames.has(s.name)                      // or by name
     )
@@ -430,8 +456,20 @@ function MarksTab({ assignments, allStudents }) {
   }, [className, activeExamName, subjectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const subject = allSubjectsData.find(s => s.id === subjectId);
+  const examConfig = activeExam?.schedule?.[className]?.find(s => s.subjectName === subject?.name);
+  const dynamicTotalMarks = examConfig?.totalMarks || 100;
+
+  const dynamicCalcGrade = (num, config) => {
+    if (!config || config.isGradeOnly) return '—';
+    const scale = config.gradingScale || [];
+    for (const r of scale) {
+      if (num >= r.min && num <= r.max) return r.grade;
+    }
+    return '—';
+  };
 
   const summary = (() => {
+    if (examConfig?.isGradeOnly) return { avg: '—', top: '—', low: '—' };
     const entries = Object.values(marks).map(Number).filter(x => !isNaN(x) && x !== 0);
     if (!entries.length) return { avg: 0, top: 0, low: 0 };
     return { avg: Math.round(entries.reduce((a, x) => a + x, 0) / entries.length), top: Math.max(...entries), low: Math.min(...entries) };
@@ -444,12 +482,18 @@ function MarksTab({ assignments, allStudents }) {
     if (!activeExamName) return toast.error('No exam found. Admin must create an exam in Exam Setup first.');
     const entries = Object.entries(marks).filter(([, v]) => v !== '' && v !== undefined);
     if (!entries.length) return toast.error('Enter at least one mark');
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try {
       const payload = entries.map(([studentId, m]) => {
-        const num = Number(m);
         const student = allStudents.find(s => s.id === studentId);
-        return { studentId, studentName: student?.fullName, subjectId, subject: subject?.name, examType: activeExamName, marks: num, totalMarks, grade: calcGrade(num, totalMarks), className, section };
+        const isGradeOnly = examConfig?.isGradeOnly;
+        const num = isGradeOnly ? null : Number(m);
+        const finalGrade = isGradeOnly ? m : dynamicCalcGrade(num, examConfig);
+        return { 
+          studentId, studentName: student?.fullName, subjectId, subject: subject?.name, 
+          examType: activeExamName, marks: num, totalMarks: dynamicTotalMarks, 
+          grade: finalGrade, className, section 
+        };
       });
       await bulkSaveResults(payload);
       toast.success(`Saved ${payload.length} results for ${subject?.name} — ${activeExamName}`);
@@ -518,9 +562,10 @@ function MarksTab({ assignments, allStudents }) {
           </select>
         </div>
         <div>
-          <label className="label-eyebrow text-muted-foreground">Total Marks</label>
-          <input type="number" value={totalMarks} onChange={e => setTotalMarks(Number(e.target.value) || 100)}
-            className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm" />
+          <label className="label-eyebrow text-muted-foreground">Total Marks / Mode</label>
+          <div className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm flex items-center text-muted-foreground">
+            {examConfig?.isGradeOnly ? 'Grade Only' : dynamicTotalMarks}
+          </div>
         </div>
       </div>
 
@@ -548,23 +593,31 @@ function MarksTab({ assignments, allStudents }) {
                 <tr><td colSpan={5} className="text-center text-sm text-muted-foreground py-8">No students in {className}{section ? `-${section}` : ''}</td></tr>
               )}
               {rows.map(s => {
-                const m = marks[s.id] ?? '';
-                const grade = m !== '' ? calcGrade(Number(m), totalMarks) : '—';
-                return (
-                  <tr key={s.id} className="border-t border-border hover:bg-muted/30">
-                    <td className="p-2 font-mono text-xs font-bold">{s.admissionNo}</td>
-                    <td className="p-2 font-bold text-sm">{s.fullName}</td>
-                    <td className="p-2 text-sm text-muted-foreground">{s.rollNo || '—'}</td>
-                    <td className="p-2">
-                      <input type="number" min={0} max={totalMarks} value={m}
-                        onChange={e => setMarks(mm => ({ ...mm, [s.id]: e.target.value }))}
-                        className="w-24 h-9 px-3 rounded-xl border border-border bg-card text-sm" />
-                    </td>
-                    <td className="p-2">
-                      <span className={`px-2.5 py-1 rounded-full label-eyebrow ${grade === '—' ? 'bg-muted text-muted-foreground' : grade === 'F' ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>{grade}</span>
-                    </td>
-                  </tr>
-                );
+                 const m = marks[s.id] ?? '';
+                 const isGradeOnly = examConfig?.isGradeOnly;
+                 const grade = isGradeOnly ? m : (m !== '' ? dynamicCalcGrade(Number(m), examConfig) : '—');
+                 return (
+                   <tr key={s.id} className="border-t border-border hover:bg-muted/30">
+                     <td className="p-2 font-mono text-xs font-bold">{s.admissionNo}</td>
+                     <td className="p-2 font-bold text-sm">{s.fullName}</td>
+                     <td className="p-2 text-sm text-muted-foreground">{s.rollNo || '—'}</td>
+                     <td className="p-2">
+                       {isGradeOnly ? (
+                         <select value={m} onChange={e => setMarks(mm => ({ ...mm, [s.id]: e.target.value }))} className="w-24 h-9 px-3 rounded-xl border border-border bg-card text-sm">
+                           <option value="">-</option>
+                           {(examConfig.gradeOptions || []).map(g => <option key={g} value={g}>{g}</option>)}
+                         </select>
+                       ) : (
+                         <input type="number" min={0} max={dynamicTotalMarks} value={m}
+                           onChange={e => setMarks(mm => ({ ...mm, [s.id]: e.target.value }))}
+                           className="w-24 h-9 px-3 rounded-xl border border-border bg-card text-sm" />
+                       )}
+                     </td>
+                     <td className="p-2">
+                       <span className={`px-2.5 py-1 rounded-full label-eyebrow ${grade === '—' || grade === '' ? 'bg-muted text-muted-foreground' : grade === 'F' ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>{grade || '—'}</span>
+                     </td>
+                   </tr>
+                 );
               })}
             </tbody>
           </table>
@@ -741,7 +794,7 @@ function LeaveTab({ profile }) {
   const submit = async () => {
     if (!form.reason) return toast.error('Enter a reason');
     if (!form.fromDate || !form.toDate) return toast.error('Select dates');
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try {
       const totalDays = Math.max(1, Math.ceil((new Date(form.toDate) - new Date(form.fromDate)) / 86400000) + 1);
       // profile.employeeId IS the Firestore employee doc ID (set in AuthContext resolvePhoneAsRole)
@@ -1010,7 +1063,7 @@ function StaffDiaryTab({ assignments, profile }) {
   const save = async () => {
     if (!form.note.trim() && !form.homework.trim()) return toast.error('Enter a diary note or homework');
     if (!form.className) return toast.error('Select a class');
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try {
       const row = await addDiaryEntry({ ...form, tenantId: process.env.REACT_APP_TENANT_ID || 'stpauls' });
       if (row) {

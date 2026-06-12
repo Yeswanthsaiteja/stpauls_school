@@ -5,14 +5,27 @@ import {
   Plus, Loader2, X, Save, TrendingUp, Award, History,
   User, Briefcase, GraduationCap, Banknote, Phone, Mail,
   MapPin, ChevronRight, CheckCircle2, Edit3, IndianRupee,
-  BookUser, UserMinus, RefreshCcw, LayoutGrid,
+  BookUser, UserMinus, RefreshCcw, LayoutGrid, Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 import { listEmployees, updateEmployee } from '../services/firebase/employeesService';
 
 const ROLES = ['Teacher', 'Class Teacher', 'Principal', 'Vice Principal', 'Accountant', 'Librarian', 'Lab Assistant', 'Administrative', 'Support Staff'];
-const DEPARTMENTS = ['Primary', 'Secondary', 'Commerce', 'Science', 'Arts', 'Administration', 'Other'];
-const EMP_TYPES = ['Permanent', 'Contract', 'Part-time'];
+const DEPARTMENTS = ['Teaching', 'Non teaching', 'Administration'];
+const EMP_TYPES = ['Probation', 'Permanent', 'Contract'];
+const AVAILABLE_MODULES = [
+  { key: 'students', label: 'Students' },
+  { key: 'academic', label: 'Academic' },
+  { key: 'finance', label: 'Finance' },
+  { key: 'employees', label: 'Employees' },
+  { key: 'attendance', label: 'Attendance' },
+  { key: 'communication', label: 'Communication' },
+  { key: 'crm', label: 'CRM / Support' },
+  { key: 'transport', label: 'Transport' },
+  { key: 'hostel', label: 'Hostel' },
+  { key: 'library', label: 'Library' }
+];
 const cardColor = (i) => ['from-indigo-500 to-violet-500', 'from-emerald-500 to-teal-500', 'from-amber-500 to-orange-500', 'from-rose-500 to-pink-500', 'from-cyan-500 to-blue-500'][i % 5];
 
 // ─── Field helpers ─────────────────────────────────────────────────────────────
@@ -48,7 +61,7 @@ function EmployeePanel({ emp, colorIdx, onClose, onSave }) {
   const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
 
   const handleSaveEdit = async () => {
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try {
       await updateEmployee(emp.id, { ...form });
       toast.success('Employee details updated');
@@ -90,7 +103,7 @@ function EmployeePanel({ emp, colorIdx, onClose, onSave }) {
       ...(salaryModal === 'promote' ? { role: salaryForm.newRole, designation: salaryForm.newRole } : {}),
     };
 
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try {
       await updateEmployee(emp.id, patch);
       setHistory(updatedHistory);
@@ -235,6 +248,29 @@ function EmployeePanel({ emp, colorIdx, onClose, onSave }) {
                   <Field label="Bank & Branch" name="bankName" value={form.bankName} onChange={handleChange} />
                   <Field label="IFSC" name="ifsc" value={form.ifsc} onChange={handleChange} />
                   <Field label="Basic Salary (₹)" name="basicSalary" value={form.basicSalary} onChange={handleChange} type="number" />
+                </div>
+              </div>
+              <div>
+                <div className="label-eyebrow text-muted-foreground mb-3">Additional Module Permissions</div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {AVAILABLE_MODULES.map(m => {
+                    const isSelected = (form.permissions || []).includes(m.key);
+                    return (
+                      <label key={m.key} className="flex items-center gap-2 cursor-pointer group">
+                        <div className={`h-5 w-5 rounded border grid place-items-center transition-colors ${isSelected ? 'bg-primary border-primary text-primary-foreground' : 'border-border bg-card group-hover:border-primary'}`}>
+                          {isSelected && <Check className="h-3 w-3" />}
+                        </div>
+                        <span className="text-sm select-none">{m.label}</span>
+                        <input type="checkbox" className="hidden"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            const p = form.permissions || [];
+                            setForm({ ...form, permissions: e.target.checked ? [...p, m.key] : p.filter(k => k !== m.key) });
+                          }}
+                        />
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
               <button onClick={handleSaveEdit} disabled={saving}
@@ -383,6 +419,7 @@ function EmployeePanel({ emp, colorIdx, onClose, onSave }) {
 
 // ─── Main Employees Module ────────────────────────────────────────────────────
 export default function EmployeesModule() {
+  const { t } = useTranslation();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -412,20 +449,20 @@ export default function EmployeesModule() {
     <div className="space-y-6" data-testid="employees-module">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tighter uppercase">Human Capital</h1>
+        <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tighter uppercase">{t('humanCapital')}</h1>
         <button onClick={() => navigate('/dashboard/employees/add')}
           className="h-10 px-4 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center gap-2" data-testid="emp-add-btn">
-          <Plus className="h-3.5 w-3.5" />Add Employee
+          <Plus className="h-3.5 w-3.5" />{t('addEmployee')}
         </button>
       </div>
 
       {/* Quick actions */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Directory',  icon: BookUser,    color: 'from-indigo-500 to-violet-500', to: '/dashboard/employees/directory' },
-          { label: 'Add Employee', icon: Plus,       color: 'from-emerald-500 to-teal-500', to: '/dashboard/employees/add' },
-          { label: 'Removal',    icon: UserMinus,   color: 'from-rose-500 to-pink-500',    to: '/dashboard/employees/removal' },
-          { label: 'Rejoin',     icon: RefreshCcw,  color: 'from-amber-500 to-orange-500', to: '/dashboard/employees/rejoin' },
+          { label: t('directory'),  icon: BookUser,    color: 'from-indigo-500 to-violet-500', to: '/dashboard/employees/directory' },
+          { label: t('addEmployee'), icon: Plus,       color: 'from-emerald-500 to-teal-500', to: '/dashboard/employees/add' },
+          { label: t('removal'),    icon: UserMinus,   color: 'from-rose-500 to-pink-500',    to: '/dashboard/employees/removal' },
+          { label: t('rejoin'),     icon: RefreshCcw,  color: 'from-amber-500 to-orange-500', to: '/dashboard/employees/rejoin' },
         ].map(a => {
           const Icon = a.icon;
           return (
@@ -443,9 +480,9 @@ export default function EmployeesModule() {
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
-          { l: 'Active', v: onDuty, c: 'text-emerald-500' },
-          { l: 'Inactive', v: list.filter(e => e.status !== 'ACTIVE').length, c: 'text-amber-500' },
-          { l: 'Total', v: list.length, c: 'text-indigo-500' },
+          { l: t('active'), v: onDuty, c: 'text-emerald-500' },
+          { l: t('inactive'), v: list.filter(e => e.status !== 'ACTIVE').length, c: 'text-amber-500' },
+          { l: t('total'), v: list.length, c: 'text-indigo-500' },
         ].map((s, i) => (
           <motion.div whileHover={{ y: -5 }} key={i} className="glass-morphism rounded-[2rem] p-5">
             <div className="label-eyebrow text-muted-foreground">{s.l}</div>
@@ -457,7 +494,7 @@ export default function EmployeesModule() {
       {/* Search + filter */}
       <div className="flex flex-wrap gap-3">
         <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search by name, ID, phone…"
+          placeholder={t('searchPlaceholder')}
           className="flex-1 min-w-48 px-4 py-2.5 rounded-2xl border-2 border-border bg-card text-sm outline-none focus:border-primary" />
         <div className="flex gap-1 bg-muted rounded-2xl p-1">
           {departments.slice(0, 5).map(d => (

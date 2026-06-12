@@ -1,9 +1,13 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import {
   onAuthStateChanged,
   signOut as fbSignOut,
   RecaptchaVerifier,
-  signInWithPhoneNumber
+  signInWithPhoneNumber,
+  PhoneAuthProvider,
+  signInWithCredential,
 } from 'firebase/auth';
 import {
   doc, getDoc, setDoc, query, collection, where, getDocs, serverTimestamp,
@@ -12,7 +16,7 @@ import { auth, db, isFirebaseConfigured } from '../lib/firebase';
 import { otpAPI } from '../services/api';
 
 // ─── Admin phone numbers (E.164 format) — add more numbers to this list ────────
-const ADMIN_PHONES = ['+918897245345', '+916304300354'];
+const ADMIN_PHONES = ['+918897245345', '+916304300354', '+919949156948', '+918978186701', '+919553123327'];
 const TENANT_ID = process.env.REACT_APP_TENANT_ID || 'stpauls';
 
 const AuthContext = createContext(null);
@@ -56,7 +60,7 @@ async function resolvePhoneAsRole(phone, loginRole) {
       if (match) {
         const emp = match.data();
         console.log('[Auth] Staff match found:', emp.fullName);
-        return {
+        const res = {
           role: emp.role || 'STAFF',
           tenantId: TENANT_ID,
           fullName: emp.fullName || emp.name || 'Staff Member',
@@ -64,7 +68,10 @@ async function resolvePhoneAsRole(phone, loginRole) {
           employeeId: match.id, department: emp.department,
           designation: emp.designation, className: emp.className,
           salary: emp.salary, displayName: emp.fullName || emp.name,
+          permissions: emp.permissions || [],
         };
+        Object.keys(res).forEach(key => res[key] === undefined && delete res[key]);
+        return res;
       }
       console.warn('[Auth] No employee found with phone:', digits10);
     } catch (e) {
@@ -88,6 +95,7 @@ async function resolvePhoneAsRole(phone, loginRole) {
           ['fatherPhone', 'fatherName'],
           ['motherPhone', 'motherName'],
           ['guardianPhone', 'guardianName'],
+          ['phoneNumber', 'fatherName'],
         ]) {
           const stored = (s[field] || '').replace(/\D/g, '').slice(-10);
           if (stored && stored === digits10) {
@@ -105,7 +113,7 @@ async function resolvePhoneAsRole(phone, loginRole) {
 
       if (matchedChildren.length > 0) {
         const primary = matchedChildren[0];
-        return {
+        const res = {
           role: 'PARENT', tenantId: TENANT_ID,
           fullName: parentFullName, phone,
           linkedStudentId: primary.id, linkedStudentName: primary.name,
@@ -113,6 +121,8 @@ async function resolvePhoneAsRole(phone, loginRole) {
           linkedStudents: matchedChildren,
           displayName: parentFullName,
         };
+        Object.keys(res).forEach(key => res[key] === undefined && delete res[key]);
+        return res;
       }
       console.warn('[Auth] No student found with parent phone:', digits10);
     } catch (e) {
@@ -130,7 +140,8 @@ async function resolveRoleByPhone(phone) {
 
   // 1. Admin phone check
   const normalised = phone.replace(/\s/g, '');
-  if (normalised === ADMIN_PHONE || normalised === ADMIN_PHONE.replace('+91', '') || normalised === '1234567890') {
+  const ADMIN_PHONES = ['+918897245345', '+916304300354', '+919949156948', '+918978186701', '+919553123327', 'admin'];
+  if (ADMIN_PHONES.includes(normalised) || ADMIN_PHONES.some(p => p.replace('+91', '') === normalised)) {
     return {
       role: 'SCHOOL_ADMIN',
       tenantId: TENANT_ID,
@@ -150,16 +161,20 @@ async function resolveRoleByPhone(phone) {
       const stored = (data.phoneNumber || data.phone || '').replace(/\D/g, '').slice(-10);
       return stored === digits10;
     });
-    if (empMatch) {
-      const emp = empMatch.data();
-      return {
-        role: emp.role || 'STAFF', tenantId: TENANT_ID,
-        fullName: emp.fullName || emp.name || 'Staff Member', phone,
-        employeeId: empMatch.id, department: emp.department,
-        designation: emp.designation, className: emp.className,
-        displayName: emp.fullName || emp.name,
-      };
-    }
+      if (empMatch) {
+        const emp = empMatch.data();
+        const res = {
+          role: emp.role || 'STAFF', tenantId: TENANT_ID,
+          fullName: emp.fullName || emp.name || 'Staff Member', phone,
+          employeeId: empMatch.id, department: emp.department,
+          designation: emp.designation, className: emp.className,
+          displayName: emp.fullName || emp.name,
+          permissions: emp.permissions || [],
+        };
+        // Strip undefined to avoid Firebase Error
+        Object.keys(res).forEach(key => res[key] === undefined && delete res[key]);
+        return res;
+      }
   } catch (e) { console.warn('Employee lookup failed', e); }
 
   // 3. Check students collection (parent phone — match last 10 digits)
@@ -173,6 +188,7 @@ async function resolveRoleByPhone(phone) {
         ['fatherPhone', 'fatherName'],
         ['motherPhone', 'motherName'],
         ['guardianPhone', 'guardianName'],
+        ['phoneNumber', 'fatherName'],
       ]) {
         const stored = (s[field] || '').replace(/\D/g, '').slice(-10);
         if (stored === digits10) {
@@ -226,11 +242,31 @@ async function upsertUserProfile(uid, profileData) {
   } catch (e) { console.warn('Profile upsert failed', e); }
 }
 
+// ─── Check if a phone number has a PIN set in Firestore ─────────────────────
+async function checkPinByPhone(phone) {
+  if (!isFirebaseConfigured || !db) return null;
+  const digits10 = phone.replace(/\D/g, '').slice(-10);
+  try {
+    // Check users collection — look for any user doc where phone ends with digits10
+    const usersSnap = await getDocs(collection(db, 'users'));
+    for (const d of usersSnap.docs) {
+      const data = d.data();
+      const storedPhone = (data.phone || '').replace(/\D/g, '').slice(-10);
+      if (storedPhone === digits10 && data.pin) {
+        return { uid: d.id, pin: data.pin, profile: data };
+      }
+    }
+  } catch (e) { console.warn('checkPinByPhone failed', e); }
+  return null;
+}
+
 // ─── AuthProvider ─────────────────────────────────────────────────────────────
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [appLocked, setAppLocked] = useState(false);
+  const [pinSetSession, setPinSetSession] = useState(false);
   const [authError, setAuthError] = useState(null);
 
   // ── Restore session on load ──
@@ -243,8 +279,11 @@ export function AuthProvider({ children }) {
         if (u && p) {
           setUser(u);
           setProfile(p);
-          setLoading(false);
-          return; // Session restored from localStorage — skip Firebase Auth listener
+          if (p?.pin && !pinSetSession) setAppLocked(true);
+          
+          // We DO NOT set loading to false here. We wait for onAuthStateChanged 
+          // to fire so that Firebase Auth is fully initialized before the Dashboard 
+          // mounts and fires a dozen Firestore requests.
         }
       } catch {}
     }
@@ -257,20 +296,34 @@ export function AuthProvider({ children }) {
     // Only fall through to Firebase Auth if no localStorage session
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
-        const phone = fbUser.phoneNumber;
-        setUser({ uid: fbUser.uid, phone });
+        let phone = fbUser.phoneNumber;
+        if (!phone && fbUser.email && fbUser.email.endsWith('@stpauls.edu')) {
+          phone = fbUser.email.split('@')[0];
+        }
+        let p = null;
         try {
+          // Force token sync just to be completely safe
+          try { await fbUser.getIdToken(true); } catch(err) {}
+          
           const snap = await getDoc(doc(db, 'users', fbUser.uid));
-          if (snap.exists()) {
-            setProfile(snap.data());
-          } else if (phone) {
-            const resolved = await resolveRoleByPhone(phone);
+          if (snap.exists()) p = snap.data();
+          
+          if (phone) {
+            const loginRole = selectedRoleRef.current || p?.role?.toLowerCase() || 'admin';
+            const resolved = await resolvePhoneAsRole(phone, loginRole);
             if (resolved) {
-              await upsertUserProfile(fbUser.uid, { ...resolved, uid: fbUser.uid, createdAt: serverTimestamp() });
-              setProfile(resolved);
+              const merged = p ? { ...p, ...resolved } : { ...resolved, uid: fbUser.uid, createdAt: serverTimestamp() };
+              await upsertUserProfile(fbUser.uid, merged);
+              p = merged;
             }
           }
         } catch (e) { console.warn('Profile load failed', e); }
+        
+        setUser({ uid: fbUser.uid, phone });
+        if (p) {
+          setProfile(p);
+          if (p.pin && !pinSetSession) setAppLocked(true);
+        }
       } else {
         setUser(null);
         setProfile(null);
@@ -289,21 +342,69 @@ export function AuthProvider({ children }) {
 
   // ── Step 1: Send OTP via Firebase Phone Auth ──
   const setupRecaptcha = () => {
-    if (!window.recaptchaVerifier) {
-      window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-        size: 'invisible',
-        // reCAPTCHA Enterprise site key created for stpauls-erp
-        'enterprise-site-key': '6LcdKPosAAAAAHR3TZq25ebyo5vTm51nZXhPfPMN',
-        callback: () => {
-          // reCAPTCHA solved
-        },
-        'expired-callback': () => {
-          if (window.recaptchaVerifier) {
-            window.recaptchaVerifier.clear();
-            window.recaptchaVerifier = null;
-          }
+    // 1. Clean up previous verifier instance
+    if (window.recaptchaVerifier) {
+      try {
+        window.recaptchaVerifier.clear();
+      } catch (e) {
+        console.warn('[Auth] Error clearing old reCAPTCHA instance:', e);
+      }
+      window.recaptchaVerifier = null;
+    }
+
+    // 2. Remove any old temporary DOM containers
+    const oldTemp = document.getElementById('temp-recaptcha-container');
+    if (oldTemp) {
+      try {
+        oldTemp.remove();
+      } catch (e) {}
+    }
+
+    // 3. Create a fresh temporary DOM container
+    // Do NOT use visibility: hidden or left/top -9999px here!
+    // Invisible reCAPTCHA needs to be able to render a visible overlay challenge if it suspects a bot.
+    const tempContainer = document.createElement('div');
+    tempContainer.id = 'temp-recaptcha-container';
+    document.body.appendChild(tempContainer);
+
+    // 4. Instantiate invisible reCAPTCHA — no custom site key so Firebase
+    //    uses its own built-in verification (avoids "invalid-app-credential" error)
+    window.recaptchaVerifier = new RecaptchaVerifier(auth, tempContainer, {
+      size: 'invisible',
+      callback: () => {
+        // reCAPTCHA solved automatically
+      },
+      'expired-callback': () => {
+        if (window.recaptchaVerifier) {
+          try { window.recaptchaVerifier.clear(); } catch (e) {}
+          window.recaptchaVerifier = null;
+          const t = document.getElementById('temp-recaptcha-container');
+          if (t) { try { t.remove(); } catch (err) {} }
         }
-      });
+      }
+    });
+  };
+
+  // Friendly messages for Firebase Phone Auth errors
+  const _friendlyFirebaseError = (code) => {
+    switch (code) {
+      case 'auth/too-many-requests':
+        return 'Too many OTP requests from this device. Please wait a few minutes and try again.';
+      case 'auth/invalid-phone-number':
+        return 'Invalid phone number. Please enter a valid 10-digit Indian mobile number.';
+      case 'auth/missing-phone-number':
+        return 'Please enter your mobile number.';
+      case 'auth/quota-exceeded':
+        return 'SMS quota exceeded. Please try again after some time.';
+      case 'auth/user-disabled':
+        return 'This phone number has been disabled. Please contact the school admin.';
+      case 'auth/invalid-app-credential':
+      case 'auth/captcha-check-failed':
+        return 'Verification failed. Please refresh the page and try again.';
+      case 'auth/network-request-failed':
+        return 'Network error. Please check your internet connection and try again.';
+      default:
+        return null;
     }
   };
 
@@ -318,6 +419,50 @@ export function AuthProvider({ children }) {
 
     selectedRoleRef.current = selectedRole;  // remember which role the user picked
 
+    if (Capacitor.isNativePlatform()) {
+      console.log('[NativeAuth] Initiating phone auth natively for phone:', phone);
+      return new Promise(async (resolve) => {
+        let codeSentListener;
+        let verificationFailedListener;
+
+        const cleanupListeners = () => {
+          if (codeSentListener) {
+            codeSentListener.remove();
+          }
+          if (verificationFailedListener) {
+            verificationFailedListener.remove();
+          }
+        };
+
+        codeSentListener = await FirebaseAuthentication.addListener('phoneCodeSent', (event) => {
+          console.log('[NativeAuth] phoneCodeSent event received:', event);
+          window.nativeVerificationId = event.verificationId;
+          pendingPhoneRef.current = phone;
+          localStorage.setItem('stpauls_pending_phone', phone);
+          cleanupListeners();
+          resolve({ ok: true, phone, channel: 'sms' });
+        });
+
+        verificationFailedListener = await FirebaseAuthentication.addListener('phoneVerificationFailed', (error) => {
+          console.error('[NativeAuth] phoneVerificationFailed event received:', error);
+          cleanupListeners();
+          const friendly = _friendlyFirebaseError(error?.code) || error?.message || 'Failed to send OTP. Please try again.';
+          setAuthError(friendly);
+          resolve({ ok: false, error: friendly });
+        });
+
+        try {
+          await FirebaseAuthentication.signInWithPhoneNumber({ phoneNumber: phone });
+        } catch (e) {
+          console.error('[NativeAuth] Exception during native signInWithPhoneNumber:', e);
+          cleanupListeners();
+          const friendly = _friendlyFirebaseError(e?.code) || e?.message || 'Failed to send OTP. Please try again.';
+          setAuthError(friendly);
+          resolve({ ok: false, error: friendly });
+        }
+      });
+    }
+
     try {
       setupRecaptcha();
       const appVerifier = window.recaptchaVerifier;
@@ -328,14 +473,14 @@ export function AuthProvider({ children }) {
       localStorage.setItem('stpauls_pending_phone', phone);
       return { ok: true, phone, channel: 'sms' };
     } catch (e) {
+      // Clean up the reCAPTCHA widget so fresh one is created on retry
       if (window.recaptchaVerifier) {
-        try {
-          window.recaptchaVerifier.render().then(widgetId => window.grecaptcha.reset(widgetId));
-        } catch (err) {}
+        try { window.recaptchaVerifier.clear(); } catch (err) {}
+        window.recaptchaVerifier = null;
       }
-      const detail = e?.message || 'Failed to send OTP. Please try again.';
-      setAuthError(detail);
-      return { ok: false, error: detail };
+      const friendly = _friendlyFirebaseError(e?.code) || e?.message || 'Failed to send OTP. Please try again.';
+      setAuthError(friendly);
+      return { ok: false, error: friendly };
     }
   }, []);
 
@@ -343,6 +488,81 @@ export function AuthProvider({ children }) {
   const verifyOTP = useCallback(async (otp, phone) => {
     setAuthError(null);
     const targetPhone = phone || pendingPhoneRef.current || localStorage.getItem('stpauls_pending_phone');
+
+    if (Capacitor.isNativePlatform()) {
+      const verificationId = window.nativeVerificationId;
+      if (!targetPhone || !verificationId) {
+        return { ok: false, error: 'Session expired. Please request OTP again.' };
+      }
+
+      try {
+        console.log('[NativeAuth] Creating web SDK credential and signing in with verificationId:', verificationId);
+        const credential = PhoneAuthProvider.credential(verificationId, otp);
+        const result = await signInWithCredential(auth, credential);
+        const fbUser = result.user;
+        const verifiedPhone = fbUser.phoneNumber || targetPhone;
+
+        const loginRole = selectedRoleRef.current; // 'admin' | 'staff' | 'parent'
+
+        // Strict role validation: phone must match the selected role
+        const effectiveRole = loginRole || 'admin';
+        const roleProfile = await resolvePhoneAsRole(verifiedPhone, effectiveRole);
+        if (!roleProfile) {
+          await fbSignOut(auth); // Sign out unauthorized user
+          try { await FirebaseAuthentication.signOut(); } catch (nativeSignOutError) {
+            console.warn('[NativeAuth] Error signing out native user after unauthorized check:', nativeSignOutError);
+          }
+          const digits10 = verifiedPhone.replace(/\D/g, '').slice(-10);
+          const errors = {
+            admin:  'This is not the admin number. Only the registered admin phone can use Admin login.',
+            staff:  `Phone ${digits10} is not registered as staff. Please check the number or ask admin to add it in the Employees section.`,
+            parent: `Phone ${digits10} is not registered as a parent. Use the father's/mother's phone number given during your child's admission.`,
+          };
+          selectedRoleRef.current = null;
+          return { ok: false, error: errors[effectiveRole] || 'Phone number not recognized for this role.' };
+        }
+
+        const uid = fbUser.uid;
+        const u = { uid, phone: verifiedPhone };
+        const p = roleProfile;
+        selectedRoleRef.current = null;
+
+        // Persist session
+        localStorage.setItem('stpauls_session', JSON.stringify({ u, p }));
+        localStorage.removeItem('stpauls_pending_phone');
+        pendingPhoneRef.current = null;
+        window.nativeVerificationId = null;
+
+        // Force token sync before Firestore calls
+        try { await fbUser.getIdToken(true); } catch (err) {}
+
+        await upsertUserProfile(uid, { ...p, uid });
+
+        setUser(u);
+        setProfile(p);
+        return { ok: true, profile: p };
+      } catch (e) {
+        console.error('[NativeAuth] Native verifyOTP error:', e);
+        let detail;
+        switch (e?.code) {
+          case 'auth/invalid-verification-code':
+          case 'invalid-verification-code':
+            detail = 'Incorrect OTP. Please check and try again.'; break;
+          case 'auth/code-expired':
+            detail = 'OTP has expired. Please request a new one.'; break;
+          case 'auth/session-expired':
+            detail = 'Session expired. Please request OTP again.'; break;
+          case 'auth/too-many-requests':
+            detail = 'Too many attempts. Please wait a few minutes and try again.'; break;
+          case 'auth/network-request-failed':
+            detail = 'Network error. Please check your internet connection.'; break;
+          default:
+            detail = e?.message || 'Incorrect OTP. Please try again.';
+        }
+        setAuthError(detail);
+        return { ok: false, error: detail };
+      }
+    }
 
     if (!targetPhone || !window.confirmationResult) {
       return { ok: false, error: 'Session expired. Please request OTP again.' };
@@ -381,35 +601,64 @@ export function AuthProvider({ children }) {
       pendingPhoneRef.current = null;
       window.confirmationResult = null;
 
+      // Force token sync before Firestore calls
+      try { await fbUser.getIdToken(true); } catch (err) {}
+
       await upsertUserProfile(uid, { ...p, uid });
 
       setUser(u);
       setProfile(p);
       return { ok: true, profile: p };
     } catch (e) {
-      const detail = e?.message?.includes('auth/invalid-verification-code')
-        ? 'Incorrect OTP. Please try again.'
-        : e?.message || 'Incorrect OTP. Please try again.';
+      let detail;
+      switch (e?.code) {
+        case 'auth/invalid-verification-code':
+          detail = 'Incorrect OTP. Please check and try again.'; break;
+        case 'auth/code-expired':
+          detail = 'OTP has expired. Please request a new one.'; break;
+        case 'auth/session-expired':
+          detail = 'Session expired. Please request OTP again.'; break;
+        case 'auth/too-many-requests':
+          detail = 'Too many attempts. Please wait a few minutes and try again.'; break;
+        case 'auth/network-request-failed':
+          detail = 'Network error. Please check your internet connection.'; break;
+        default:
+          detail = e?.message || 'Incorrect OTP. Please try again.';
+      }
       setAuthError(detail);
       return { ok: false, error: detail };
     }
   }, []);
 
+  // ── Restore session directly (used by PIN login in LoginPage) ──
+  const restoreSession = useCallback((u, p) => {
+    localStorage.setItem('stpauls_session', JSON.stringify({ u, p }));
+    setUser(u);
+    setProfile(p);
+    setAppLocked(false);
+  }, []);
+
   // ── Sign out ──
   const signOut = useCallback(async () => {
+    // Clear local storage and state
     localStorage.removeItem('stpauls_session');
-    localStorage.removeItem('stpauls_pending_phone');
-    pendingPhoneRef.current = null;
-    setUser(null); setProfile(null);
-    if (isFirebaseConfigured && auth) {
-      try { await fbSignOut(auth); } catch {}
+    setUser(null);
+    setProfile(null);
+    setAppLocked(false);
+
+    // Explicitly sign out of Firebase Auth to prevent auto-login loops
+    try {
+      await fbSignOut(auth);
+      await FirebaseAuthentication.signOut();
+    } catch (e) {
+      console.warn('Firebase signout error', e);
     }
   }, []);
 
   return (
     <AuthContext.Provider value={{
-      user, profile, loading, authError,
-      sendOTP, verifyOTP, signOut,
+      user, profile, loading, authError, appLocked, setAppLocked, setPinSetSession,
+      sendOTP, verifyOTP, signOut, restoreSession, setLoginRole: (role) => { selectedRoleRef.current = role; },
       isAuthenticated: !!user,
     }}>
       {children}

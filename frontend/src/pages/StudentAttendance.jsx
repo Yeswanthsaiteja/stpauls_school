@@ -5,16 +5,17 @@ import { Save, MessageCircle, CalendarDays, Loader2, RefreshCw, CheckCircle2, X,
 import { listStudents } from '../services/firebase/studentsService';
 import { listClasses } from '../services/firebase/academicService';
 import { getAttendance, saveAttendance, listAttendance } from '../services/firebase/attendanceService';
+import { listHolidays } from '../services/firebase/holidaysService';
 import { getWhatsAppUrl } from '../lib/utils';
+import { logActivity } from '../services/firebase/activityService';
 import { toast } from 'sonner';
 import { useAuth } from '../contexts/AuthContext';
 
-const STATUS = ['PRESENT', 'ABSENT', 'LATE'];
-const labelOf = { PRESENT: 'P', ABSENT: 'A', LATE: 'L' };
+const STATUS = ['PRESENT', 'ABSENT'];
+const labelOf = { PRESENT: 'P', ABSENT: 'A' };
 const colorOf = {
   PRESENT: 'bg-emerald-500 text-white',
   ABSENT: 'bg-rose-500 text-white',
-  LATE: 'bg-amber-500 text-white',
 };
 
 export default function StudentAttendance() {
@@ -69,19 +70,29 @@ export default function StudentAttendance() {
     });
   }, [className, section]);
 
+  const [holiday, setHoliday] = useState(null);
+
   // Load existing attendance when date/class/section changes
   useEffect(() => {
     if (!className || !section || !date) return;
-    getAttendance(className, section, date).then((records) => {
+    Promise.all([
+      getAttendance(className, section, date),
+      listHolidays()
+    ]).then(([records, hols]) => {
+      const hol = hols.find(h => h.date === date);
+      setHoliday(hol || null);
+
       if (records && Object.keys(records).length > 0) {
         setMarks(records);
         setExistingRecord({ loaded: true });
       } else {
-        setMarks({});
+        const init = {};
+        students.forEach((s) => { init[s.id] = 'PRESENT'; });
+        setMarks(init);
         setExistingRecord(null);
       }
     });
-  }, [className, section, date]);
+  }, [className, section, date, students]);
 
   // Load recent attendance history for the selected class/section
   const loadHistory = useCallback(async () => {
@@ -102,7 +113,7 @@ export default function StudentAttendance() {
   };
 
   const counts = useMemo(() => {
-    const c = { PRESENT: 0, ABSENT: 0, LATE: 0 };
+    const c = { PRESENT: 0, ABSENT: 0 };
     Object.values(marks).forEach((s) => { c[s] = (c[s] || 0) + 1; });
     return c;
   }, [marks]);
@@ -110,11 +121,19 @@ export default function StudentAttendance() {
   const save = async () => {
     const entries = Object.entries(marks);
     if (!entries.length) return toast.error('Mark at least one student');
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try {
       await saveAttendance(className, section, date, marks, profile?.fullName || 'Admin');
       setExistingRecord({ loaded: true });
       toast.success(`Attendance saved for ${entries.length} students`);
+
+      // Dispatch real-time activity log
+      const total = entries.length;
+      const present = Object.values(marks).filter((v) => v === 'PRESENT').length;
+      await logActivity({
+        type: 'attendance',
+        text: `Attendance marked · Class ${className}-${section}, ${present}/${total} present`,
+      });
 
       // After save, show absent students for WhatsApp notification
       const absentList = students.filter((s) => marks[s.id] === 'ABSENT');
@@ -139,7 +158,7 @@ export default function StudentAttendance() {
 
   return (
     <div className="space-y-6" data-testid="student-attendance">
-      <NavLink to=".." className="label-eyebrow text-primary">← Back to Attendance</NavLink>
+      <NavLink to="/dashboard/attendance" className="label-eyebrow text-primary">← Back to Attendance</NavLink>
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Student Attendance</h1>
         <div className="flex bg-muted rounded-full p-1 w-fit">
@@ -185,59 +204,71 @@ export default function StudentAttendance() {
           <div className="grid grid-cols-3 gap-3">
             <div className="glass-morphism rounded-2xl p-4"><div className="label-eyebrow text-emerald-500">Present</div><div className="font-display font-black text-2xl tracking-tighter">{counts.PRESENT || 0}</div></div>
             <div className="glass-morphism rounded-2xl p-4"><div className="label-eyebrow text-rose-500">Absent</div><div className="font-display font-black text-2xl tracking-tighter">{counts.ABSENT || 0}</div></div>
-            <div className="glass-morphism rounded-2xl p-4"><div className="label-eyebrow text-amber-500">Late</div><div className="font-display font-black text-2xl tracking-tighter">{counts.LATE || 0}</div></div>
           </div>
 
           {/* Roster */}
           <div className="glass-morphism rounded-[2rem] p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="label-eyebrow text-muted-foreground">
-                Roster · {loading ? '…' : `${students.length} students`}
-              </div>
-              <button onClick={save} disabled={saving || students.length === 0} className="h-10 px-5 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center gap-2 disabled:opacity-60" data-testid="att-save">
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                {existingRecord ? 'Update Attendance' : 'Save Attendance'}
-              </button>
-            </div>
-
-            {loading ? (
-              <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
-            ) : students.length === 0 ? (
-              <div className="text-center text-sm text-muted-foreground py-8">
-                No students found in {className} – {section}.<br />
-                <span className="text-xs">Make sure students are enrolled with the matching class and section.</span>
+            {holiday ? (
+              <div className="text-center py-10 border border-indigo-500/20 rounded-2xl bg-indigo-500/5">
+                <div className="mx-auto w-12 h-12 rounded-full bg-indigo-500/10 grid place-items-center mb-4">
+                  <span className="text-2xl">🎉</span>
+                </div>
+                <h3 className="font-display font-black text-2xl tracking-tighter text-indigo-500 mb-2">Today is a Holiday</h3>
+                <p className="text-muted-foreground">{holiday.name}</p>
+                <p className="text-xs text-muted-foreground mt-2 opacity-70">Attendance marking is disabled for holidays.</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {students.map((s) => {
-                  const status = marks[s.id];
-                  return (
-                    <motion.div key={s.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-3 p-3 rounded-2xl border border-border">
-                      <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center text-white font-black text-sm flex-shrink-0">
-                        {(s.firstName || s.fullName || 'S')[0]}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-bold text-sm">{s.fullName}</div>
-                        <div className="label-eyebrow text-muted-foreground">{s.admissionNo}{s.rollNo ? ` · Roll ${s.rollNo}` : ''}</div>
-                      </div>
-                      <div className="flex gap-1.5">
-                        {STATUS.map((st) => (
-                          <button key={st} onClick={() => setMarks((mm) => ({ ...mm, [s.id]: st }))} data-testid={`att-${s.id}-${st}`}
-                            className={`h-9 w-9 rounded-xl text-xs font-black transition-colors ${status === st ? colorOf[st] : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
-                            {labelOf[st]}
-                          </button>
-                        ))}
-                      </div>
-                      {status === 'ABSENT' && s.phoneNumber && (
-                        <a href={getWhatsAppUrl(s.phoneNumber, `Your child ${s.fullName} was marked absent on ${date}. Kindly inform if you have any concern.`)} target="_blank" rel="noreferrer"
-                          className="h-9 px-3 rounded-xl bg-emerald-500/10 text-emerald-600 label-eyebrow flex items-center gap-1.5" data-testid={`att-wa-${s.id}`}>
-                          <MessageCircle className="h-3 w-3" />Notify
-                        </a>
-                      )}
-                    </motion.div>
-                  );
-                })}
-              </div>
+              <>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="label-eyebrow text-muted-foreground">
+                    Roster · {loading ? '…' : `${students.length} students`}
+                  </div>
+                  <button onClick={save} disabled={saving || students.length === 0} className="h-10 px-5 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center gap-2 disabled:opacity-60" data-testid="att-save">
+                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    {existingRecord ? 'Update Attendance' : 'Save Attendance'}
+                  </button>
+                </div>
+
+                {loading ? (
+                  <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
+                ) : students.length === 0 ? (
+                  <div className="text-center text-sm text-muted-foreground py-8">
+                    No students found in {className} – {section}.<br />
+                    <span className="text-xs">Make sure students are enrolled with the matching class and section.</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {students.map((s) => {
+                      const status = marks[s.id];
+                      return (
+                        <motion.div key={s.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-3 p-3 rounded-2xl border border-border">
+                          <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center text-white font-black text-sm flex-shrink-0">
+                            {(s.firstName || s.fullName || 'S')[0]}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-sm">{s.fullName}</div>
+                            <div className="label-eyebrow text-muted-foreground">{s.admissionNo}{s.rollNo ? ` · Roll ${s.rollNo}` : ''}</div>
+                          </div>
+                          <div className="flex gap-1.5">
+                            {STATUS.map((st) => (
+                              <button key={st} onClick={() => setMarks((mm) => ({ ...mm, [s.id]: st }))} data-testid={`att-${s.id}-${st}`}
+                                className={`h-9 w-9 rounded-xl text-xs font-black transition-colors ${status === st ? colorOf[st] : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>
+                                {labelOf[st]}
+                              </button>
+                            ))}
+                          </div>
+                          {status === 'ABSENT' && s.phoneNumber && (
+                            <a href={getWhatsAppUrl(s.phoneNumber, `Your child ${s.fullName} was marked absent on ${date}. Kindly inform if you have any concern.`)} target="_blank" rel="noreferrer"
+                              className="h-9 px-3 rounded-xl bg-emerald-500/10 text-emerald-600 label-eyebrow flex items-center gap-1.5" data-testid={`att-wa-${s.id}`}>
+                              <MessageCircle className="h-3 w-3" />Notify
+                            </a>
+                          )}
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </>
@@ -259,7 +290,6 @@ export default function StudentAttendance() {
                 const total = Object.keys(rec.records || {}).length;
                 const p = rec.present ?? Object.values(rec.records || {}).filter((v) => v === 'PRESENT').length;
                 const a = rec.absent ?? Object.values(rec.records || {}).filter((v) => v === 'ABSENT').length;
-                const l = rec.late ?? Object.values(rec.records || {}).filter((v) => v === 'LATE').length;
                 return (
                   <div key={rec.id} className="flex items-center justify-between p-4 rounded-2xl border border-border">
                     <div>
@@ -269,7 +299,6 @@ export default function StudentAttendance() {
                     <div className="flex gap-3 text-sm">
                       <span className="text-emerald-500 font-bold">{p}P</span>
                       <span className="text-rose-500 font-bold">{a}A</span>
-                      <span className="text-amber-500 font-bold">{l}L</span>
                       <span className="text-muted-foreground">/{total}</span>
                     </div>
                     <button onClick={() => { setDate(rec.date); setMarks(rec.records || {}); setExistingRecord({ loaded: true }); setTab('mark'); }}

@@ -59,7 +59,7 @@ export default function Payroll() {
     if (filtered.some((p) => p.employeeId === form.employeeId)) {
       return toast.error(`Payroll for ${form.employeeName} already exists for ${month}`);
     }
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try {
       const row = await addPayrollEntry({ ...form, basic: Number(form.basic), hra: Number(form.hra), da: Number(form.da), deductions: Number(form.deductions), net, month, status: 'PENDING' });
       if (row) {

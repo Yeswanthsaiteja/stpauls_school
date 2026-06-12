@@ -39,31 +39,46 @@ export default function ClassesSections() {
   };
 
   const save = async () => {
+    const sections = form.sections.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
     const payload = {
-      name: form.name,
-      sections: form.sections.split(',').map((s) => s.trim()).filter(Boolean),
+      name: form.name.trim(),
+      sections,
       teacher1: form.teacher1, teacher2: form.teacher2,
     };
     if (!payload.name) return toast.error('Class name required');
-    setSaving(true);
-    
+    if (!sections.length) return toast.error('At least one section required');
+
+    // ── Duplicate check: same class name + overlapping section ──
+    if (modal.mode === 'add') {
+      const existing = list.find(c =>
+        c.name.trim().toLowerCase() === payload.name.toLowerCase() &&
+        c.sections?.some(s => sections.includes(s.toUpperCase()))
+      );
+      if (existing) {
+        const overlap = existing.sections.filter(s => sections.includes(s.toUpperCase()));
+        toast.error(`Class "${payload.name}" – Section${overlap.length > 1 ? 's' : ''} "${overlap.join(', ')}" already exists! Please use a different section.`);
+        return;
+      }
+    }
+
+    if (saving) return; setSaving(true);
     if (modal.mode === 'add') {
       const row = await addClass(payload);
       if (row) {
         setList((l) => [...l, row]);
-        toast.success('Class saved to Firestore ✓');
+        toast.success(`Class ${payload.name}-${sections.join('/')} saved ✓`);
       } else {
         toast.error('Failed to save class');
       }
     } else {
       await updateClass(modal.id, payload);
       setList((l) => l.map((c) => c.id === modal.id ? { ...c, ...payload } : c));
-      toast.success('Class updated in Firestore ✓');
+      toast.success('Class updated ✓');
     }
-    
     setSaving(false);
     setModal(null);
   };
+
 
   const remove = async (c) => {
     if (!window.confirm(`Delete class ${c.name}?`)) return;

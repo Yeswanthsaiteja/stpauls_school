@@ -43,7 +43,7 @@ export default function Diary() {
 
   const post = async () => {
     if (!form.note.trim()) return toast.error('Note required');
-    setSaving(true);
+    if (saving) return; setSaving(true);
     const row = await addDiaryEntry(form);
     if (row) {
       setList((l) => [row, ...l]);

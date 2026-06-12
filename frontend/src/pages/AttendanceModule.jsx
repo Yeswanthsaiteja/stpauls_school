@@ -11,6 +11,8 @@ export default function AttendanceModule() {
     { icon: CalendarCheck, label: 'Student Attendance (Manual)', sub: 'Daily P/A/L', color: 'from-indigo-500 to-violet-500', to: '/dashboard/student-attendance' },
     { icon: UserCog, label: 'RFID Upload', sub: 'CSV bulk + WhatsApp', color: 'from-fuchsia-500 to-purple-500', to: '/dashboard/rfid-attendance' },
     { icon: BedDouble, label: 'Leave Management', sub: 'Apply · approve', color: 'from-amber-500 to-orange-500', to: '/dashboard/leave-management' },
+    { icon: CalendarCheck, label: 'Holidays Calendar', sub: 'Yearly & Sudden', color: 'from-emerald-500 to-teal-500', to: '/dashboard/holidays' },
+    { icon: CalendarCheck, label: 'Attendance Status', sub: 'Class-wise aggregates', color: 'from-cyan-500 to-blue-500', to: '/dashboard/attendance-status' },
   ];
   return (
     <div className="space-y-6" data-testid="attendance-module">

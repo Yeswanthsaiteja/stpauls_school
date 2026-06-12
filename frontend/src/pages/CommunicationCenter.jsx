@@ -6,6 +6,8 @@ import {
   sendMessage, subscribeMessages,
 } from '../services/firebase/communicationService';
 import { listEmployees } from '../services/firebase/employeesService';
+import { listStudents } from '../services/firebase/studentsService';
+import { listClasses } from '../services/firebase/academicService';
 import { addNotification } from '../services/firebase/notificationsService';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
@@ -23,10 +25,12 @@ export default function CommunicationCenter() {
   const [annList, setAnnList] = useState([]);
   const [annLoading, setAnnLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [annForm, setAnnForm] = useState({ title: '', description: '', targetRole: 'ALL' });
+  const [annForm, setAnnForm] = useState({ title: '', description: '', targetRole: 'ALL', targetClass: '', targetSection: '' });
+  const [classes, setClasses] = useState([]);
 
   useEffect(() => {
     listAnnouncements().then((data) => { setAnnList(data); setAnnLoading(false); });
+    listClasses().then(setClasses);
   }, []);
 
   const publishAnn = async () => {
@@ -36,11 +40,26 @@ export default function CommunicationCenter() {
       const row = await addAnnouncement({ ...annForm, postedBy: profile?.fullName || 'Admin' });
       if (row) {
         setAnnList((l) => [row, ...l]);
-        setAnnForm({ title: '', description: '', targetRole: 'ALL' });
+        
+        // If targeted at PARENT, send individual notifications to parents of those students
+        if (annForm.targetRole === 'PARENT') {
+          const allStudents = await listStudents({ status: 'ACTIVE' });
+          const targetStudents = allStudents.filter(s => 
+            (!annForm.targetClass || s.className === annForm.targetClass) &&
+            (!annForm.targetSection || s.section === annForm.targetSection)
+          );
+          
+          // Send notification to each matching student (parent sees it when logged in with this context)
+          await Promise.all(targetStudents.map(s => addNotification({
+            userId: s.id, // Notification bound to student ID, Parent dashboard reads these
+            type: 'announcement',
+            title: `New announcement arrived: ${annForm.title}`,
+            body: annForm.description.slice(0, 80)
+          })));
+        }
+
+        setAnnForm({ title: '', description: '', targetRole: 'ALL', targetClass: '', targetSection: '' });
         toast.success('Announcement published');
-        // Notification: broadcast to all staff (uses special userId 'broadcast_staff')
-        // Individual notifications are expensive; we use a broadcast marker that
-        // the staff dashboard reads from announcements via real-time subscription.
       }
     } catch {
       toast.error('Failed to publish. Please try again.');
@@ -153,7 +172,10 @@ export default function CommunicationCenter() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <div className="font-bold">{a.title}</div>
-                        <span className="label-eyebrow bg-primary/10 text-primary px-2.5 py-1 rounded-full">{a.targetRole}</span>
+                        <span className="label-eyebrow bg-primary/10 text-primary px-2.5 py-1 rounded-full">
+                          {a.targetRole}
+                          {a.targetClass ? ` · ${a.targetClass}${a.targetSection ? `-${a.targetSection}` : ''}` : ''}
+                        </span>
                       </div>
                       <p className="text-sm text-muted-foreground">{a.description}</p>
                       <div className="label-eyebrow text-muted-foreground mt-2 flex items-center gap-2">
@@ -183,11 +205,28 @@ export default function CommunicationCenter() {
               className="w-full px-4 py-2.5 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary resize-none" />
             <div>
               <label className="label-eyebrow text-muted-foreground">Target Audience</label>
-              <select data-testid="ann-target" value={annForm.targetRole} onChange={(e) => setAnnForm({ ...annForm, targetRole: e.target.value })}
+              <select data-testid="ann-target" value={annForm.targetRole} onChange={(e) => setAnnForm({ ...annForm, targetRole: e.target.value, targetClass: '', targetSection: '' })}
                 className="mt-1 w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm">
                 {TARGET_ROLES.map((r) => <option key={r}>{r}</option>)}
               </select>
             </div>
+            
+            {(annForm.targetRole === 'PARENT' || annForm.targetRole === 'STUDENT') && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label-eyebrow text-muted-foreground">Class (Optional)</label>
+                  <select value={annForm.targetClass} onChange={(e) => setAnnForm({ ...annForm, targetClass: e.target.value })} className="mt-1 w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm">
+                    <option value="">All Classes</option>
+                    {classes.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label-eyebrow text-muted-foreground">Section (Optional)</label>
+                  <input value={annForm.targetSection} onChange={(e) => setAnnForm({ ...annForm, targetSection: e.target.value.toUpperCase() })} placeholder="e.g. A" className="mt-1 w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm uppercase" />
+                </div>
+              </div>
+            )}
+
             <button onClick={publishAnn} disabled={sending} data-testid="ann-send"
               className="w-full h-11 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center justify-center gap-2 disabled:opacity-60">
               {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Publish

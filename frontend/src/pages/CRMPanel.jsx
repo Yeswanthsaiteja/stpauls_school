@@ -42,7 +42,7 @@ export default function CRMPanel() {
 
   const create = async () => {
     if (!form.title.trim()) return toast.error('Title required');
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try {
       const row = await addTicket({ ...form });
       if (row) {

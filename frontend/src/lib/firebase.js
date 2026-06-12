@@ -8,6 +8,7 @@ import {
 } from 'firebase/auth';
 import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { getFunctions } from 'firebase/functions';
 export { RecaptchaVerifier, signInWithPhoneNumber };
 
 
@@ -31,6 +32,7 @@ let app = null;
 let auth = null;
 let db = null;
 let storage = null;
+let functions = null;
 
 if (isFirebaseConfigured) {
   app = getApps().length ? getApps()[0] : initializeApp(cfg);
@@ -46,6 +48,7 @@ if (isFirebaseConfigured) {
     db = getFirestore(app);
   }
   storage = getStorage(app);
+  functions = getFunctions(app, "us-central1");
 }
 
-export { app, auth, db, storage, databaseId };
+export { app, auth, db, storage, functions, databaseId };

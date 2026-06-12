@@ -38,7 +38,7 @@ export default function SubjectsTopicsCRUD() {
 
   const saveSubject = async () => {
     if (!subjForm.name) return toast.error('Name required');
-    setSaving(true);
+    if (saving) return; setSaving(true);
     if (subjModal === 'add') { 
       const row = await addSubject(subjForm); 
       if (row) {
@@ -66,7 +66,7 @@ export default function SubjectsTopicsCRUD() {
 
   const saveTopic = async () => {
     if (!topicForm.topicName) return toast.error('Topic required');
-    setSaving(true);
+    if (saving) return; setSaving(true);
     const subj = subjects.find((s) => s.id === active);
     const payload = { ...topicForm, subjectId: active, subjectName: subj?.name };
     if (topicModal === 'add') {

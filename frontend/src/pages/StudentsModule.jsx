@@ -7,21 +7,24 @@ import { listStudents, addStudent, searchStudents } from '../services/firebase/s
 import { getWhatsAppUrl } from '../lib/utils';
 import { toast } from 'sonner';
 
-const STEPS = ['Personal', 'Contact', 'Parent Info', 'Academic', 'Photo'];
+const STEPS = ['personal', 'contact', 'parentInfo', 'academic', 'photo'];
 
 function Landing() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [recents, setRecents] = useState([]);
   useEffect(() => { listStudents({ status: 'ACTIVE' }).then((s) => setRecents(s.slice(0, 5))); }, []);
   const cards = [
-    { icon: Users, label: 'Student Directory', sub: 'Browse · search · filter', to: '/dashboard/students/directory', color: 'from-indigo-500 to-violet-500' },
-    { icon: FilePlus2, label: 'Admission Form', sub: 'Multi-step wizard', to: '/dashboard/students/admission-full', color: 'from-emerald-500 to-teal-500' },
-    { icon: UserMinus2, label: 'Student Removal', sub: 'TC + deactivation', to: '/dashboard/students/removal', color: 'from-amber-500 to-orange-500' },
-    { icon: Award, label: 'Certificates', sub: 'TC · Bonafide · more', to: '/dashboard/students/certificates', color: 'from-rose-500 to-pink-500' },
+    { icon: Users, label: t('studentDirectory'), sub: 'Browse · search · filter', to: '/dashboard/students/directory', color: 'from-indigo-500 to-violet-500' },
+    { icon: FilePlus2, label: t('admissionForm'), sub: 'Multi-step wizard', to: '/dashboard/students/admission-full', color: 'from-emerald-500 to-teal-500' },
+    { icon: UserMinus2, label: t('studentRemoval'), sub: 'TC + deactivation', to: '/dashboard/students/removal', color: 'from-amber-500 to-orange-500' },
+    { icon: Search, label: 'Edit Student', sub: 'Search & Update', to: '/dashboard/students/edit-search', color: 'from-blue-500 to-indigo-500' },
+    { icon: Award, label: t('certificates'), sub: 'TC · Bonafide · more', to: '/dashboard/students/certificates', color: 'from-rose-500 to-pink-500' },
+    { icon: Upload, label: t('importData') || 'Import Excel / CSV', sub: 'Bulk import student data', to: '/dashboard/bulk-import', color: 'from-cyan-500 to-sky-500' },
   ];
   return (
     <div className="space-y-6" data-testid="students-module">
-      <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tighter uppercase">Students</h1>
+      <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tighter uppercase">{t('students')}</h1>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((c, i) => (
           <motion.button key={c.to} onClick={() => navigate(c.to)} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} whileHover={{ y: -5, scale: 1.02 }} className="glass-morphism rounded-[2rem] p-5 text-left" data-testid={`students-card-${c.label.split(' ').join('-')}`}>
@@ -32,21 +35,21 @@ function Landing() {
         ))}
         <motion.button onClick={() => navigate('/dashboard/students/rejoin')} whileHover={{ y: -5, scale: 1.02 }} className="glass-morphism rounded-[2rem] p-5 text-left" data-testid="students-card-Rejoin">
           <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-500 grid place-items-center text-white"><Users className="h-5 w-5" /></div>
-          <div className="mt-4 font-bold">Student Rejoin</div>
+          <div className="mt-4 font-bold">{t('studentRejoin')}</div>
           <div className="label-eyebrow text-muted-foreground mt-1">Reactivate alumni</div>
         </motion.button>
       </div>
 
       <div className="glass-morphism rounded-[2rem] p-5">
         <div className="flex items-center justify-between mb-4">
-          <div className="label-eyebrow text-muted-foreground">Recent Admissions</div>
-          <button className="label-eyebrow text-primary">View All</button>
+          <div className="label-eyebrow text-muted-foreground">{t('recentAdmissions')}</div>
+          <button className="label-eyebrow text-primary">{t('viewAll')}</button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="text-left">
-                {['Token', 'Student', 'Class', 'Status', ''].map((h) => (
+                {[t('token'), t('student'), t('class'), t('status'), ''].map((h) => (
                   <th key={h} className="label-eyebrow text-muted-foreground py-2 px-3">{h}</th>
                 ))}
               </tr>
@@ -77,10 +80,10 @@ function Landing() {
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-2xl bg-primary/10 grid place-items-center"><Upload className="h-4 w-4 text-primary" /></div>
           <div className="flex-1">
-            <div className="font-bold text-sm">Bulk Import (CSV)</div>
+            <div className="font-bold text-sm">{t('bulkImportCsv')}</div>
             <div className="label-eyebrow text-muted-foreground">Drag & drop or browse · 700+ records supported</div>
           </div>
-          <button onClick={() => navigate('/dashboard/bulk-import')} data-testid="bulk-import-btn" className="px-4 py-2 rounded-2xl bg-foreground text-background label-eyebrow">Open Importer</button>
+          <button onClick={() => navigate('/dashboard/bulk-import')} data-testid="bulk-import-btn" className="px-4 py-2 rounded-2xl bg-foreground text-background label-eyebrow">{t('openImporter')}</button>
         </div>
       </div>
     </div>
@@ -88,6 +91,7 @@ function Landing() {
 }
 
 function AdmissionForm() {
+  const { t } = useTranslation();
   const [step, setStep] = useState(0);
   const [data, setData] = useState({ firstName: '', lastName: '', dateOfBirth: '', gender: 'Male', className: 'X', section: 'A', phoneNumber: '', fatherName: '', motherName: '' });
   const set = (k, v) => setData((d) => ({ ...d, [k]: v }));
@@ -125,14 +129,14 @@ function AdmissionForm() {
 
   return (
     <div className="space-y-6 max-w-3xl" data-testid="admission-form">
-      <NavLink to=".." className="label-eyebrow text-primary">← Back to Students</NavLink>
-      <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Admission Form</h1>
+      <NavLink to=".." className="label-eyebrow text-primary">{t('backToStudents')}</NavLink>
+      <h1 className="font-display font-black text-3xl tracking-tighter uppercase">{t('admissionForm')}</h1>
 
       <div className="flex items-center gap-2">
         {STEPS.map((s, i) => (
           <div key={s} className="flex-1">
             <div className={`h-1.5 rounded-full ${i <= step ? 'bg-primary' : 'bg-muted'}`} />
-            <div className={`label-eyebrow mt-1.5 ${i <= step ? 'text-primary' : 'text-muted-foreground'}`}>{i + 1}. {s}</div>
+            <div className={`label-eyebrow mt-1.5 ${i <= step ? 'text-primary' : 'text-muted-foreground'}`}>{i + 1}. {t(s)}</div>
           </div>
         ))}
       </div>
@@ -210,6 +214,7 @@ function AdmissionForm() {
 }
 
 function Directory() {
+  const { t } = useTranslation();
   const [q, setQ] = useState('');
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -223,11 +228,11 @@ function Directory() {
 
   return (
     <div className="space-y-5" data-testid="student-directory">
-      <NavLink to=".." className="label-eyebrow text-primary">← Back</NavLink>
-      <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Student Directory</h1>
+      <NavLink to=".." className="label-eyebrow text-primary">{t('back')}</NavLink>
+      <h1 className="font-display font-black text-3xl tracking-tighter uppercase">{t('studentDirectory')}</h1>
       <div className="glass-morphism rounded-[2rem] p-2 flex items-center gap-2">
         <Search className="h-4 w-4 text-muted-foreground ml-3" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search students…" className="flex-1 h-10 bg-transparent outline-none text-sm" data-testid="directory-search" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('searchStudents')} className="flex-1 h-10 bg-transparent outline-none text-sm" data-testid="directory-search" />
       </div>
       {loading && <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -256,6 +261,89 @@ function Manage() {
   );
 }
 
+function EditSearch() {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [q, setQ] = useState('');
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    listStudents({ status: 'ACTIVE' }).then((s) => { setList(s); setLoading(false); });
+  }, []);
+
+  const filtered = q ? list.filter((s) => 
+    s.fullName?.toLowerCase().includes(q.toLowerCase()) || 
+    s.admissionNo?.toLowerCase().includes(q.toLowerCase()) ||
+    (s.className + s.section)?.toLowerCase().includes(q.toLowerCase())
+  ) : list;
+
+  return (
+    <div className="space-y-5" data-testid="edit-search">
+      <NavLink to=".." className="label-eyebrow text-primary">{t('back')}</NavLink>
+      <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Edit Student</h1>
+      <div className="glass-morphism rounded-[2rem] p-2 flex items-center gap-2">
+        <Search className="h-4 w-4 text-muted-foreground ml-3" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, admission no, class/section..." className="flex-1 h-10 bg-transparent outline-none text-sm" autoFocus />
+      </div>
+      {loading && <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}
+      
+      {!loading && (
+        <div className="glass-morphism rounded-[2rem] p-5 overflow-x-auto thin-scrollbar">
+          <table className="w-full text-sm border-collapse min-w-[1200px]">
+            <thead>
+              <tr className="text-left border-b border-border text-muted-foreground">
+                <th className="p-3 font-bold label-eyebrow">Full Name</th>
+                <th className="p-3 font-bold label-eyebrow">DOB</th>
+                <th className="p-3 font-bold label-eyebrow">Gender</th>
+                <th className="p-3 font-bold label-eyebrow">Aadhar No</th>
+                <th className="p-3 font-bold label-eyebrow">Category</th>
+                <th className="p-3 font-bold label-eyebrow">Phone</th>
+                <th className="p-3 font-bold label-eyebrow">Father's Name</th>
+                <th className="p-3 font-bold label-eyebrow">Mother's Name</th>
+                <th className="p-3 font-bold label-eyebrow">Adm Year</th>
+                <th className="p-3 font-bold label-eyebrow">Adm Class</th>
+                <th className="p-3 font-bold label-eyebrow">Class</th>
+                <th className="p-3 font-bold label-eyebrow">Sec</th>
+                <th className="p-3 font-bold label-eyebrow text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((s) => (
+                <tr key={s.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                  <td className="p-3 font-semibold whitespace-nowrap">{s.fullName}</td>
+                  <td className="p-3 whitespace-nowrap">{s.dateOfBirth || '-'}</td>
+                  <td className="p-3">{s.gender || '-'}</td>
+                  <td className="p-3 whitespace-nowrap">{s.aadharNumber || '-'}</td>
+                  <td className="p-3">{s.category || '-'}</td>
+                  <td className="p-3 whitespace-nowrap">{s.phoneNumber || '-'}</td>
+                  <td className="p-3 whitespace-nowrap">{s.fatherName || '-'}</td>
+                  <td className="p-3 whitespace-nowrap">{s.motherName || '-'}</td>
+                  <td className="p-3">{s.admissionYear || '-'}</td>
+                  <td className="p-3">{s.admissionClass || '-'}</td>
+                  <td className="p-3 font-bold text-primary">{s.className || '-'}</td>
+                  <td className="p-3 font-bold text-primary">{s.section || '-'}</td>
+                  <td className="p-3 text-right">
+                    <button onClick={() => navigate(`/dashboard/students/edit/${s.id}`)} className="px-4 py-1.5 rounded-xl bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 font-bold text-xs transition-colors whitespace-nowrap">
+                      EDIT
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={13} className="p-8 text-center text-muted-foreground">No students found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function StudentsModule() {
   return (
     <Routes>
@@ -264,6 +352,7 @@ export default function StudentsModule() {
       <Route path="directory" element={<Directory />} />
       <Route path="manage" element={<Manage />} />
       <Route path="certificates" element={<Manage />} />
+      <Route path="edit-search" element={<EditSearch />} />
     </Routes>
   );
 }

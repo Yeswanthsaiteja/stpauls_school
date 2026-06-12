@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { listStudents } from '../services/firebase/studentsService';
 import { listEmployees } from '../services/firebase/employeesService';
 import { listTransactions } from '../services/firebase/financeService';
+import { subscribeRecentActivities } from '../services/firebase/activityService';
 import { formatCurrency, exportToCSV } from '../lib/utils';
 import { useTenant } from '../contexts/TenantContext';
 import axios from 'axios';
@@ -52,6 +53,15 @@ export default function AdminDashboard() {
   const [transactions, setTransactions] = useState([]);
 
   useEffect(() => {
+    // DEBUG LOGGING TO CATCH TOKEN ISSUE
+    import('../lib/firebase').then(({ auth }) => {
+      if (auth.currentUser) {
+        auth.currentUser.getIdToken().then(t => console.log('✅ TOKEN IS VALID:', t.substring(0, 20) + '...')).catch(e => console.error('❌ TOKEN FETCH FAILED:', e));
+      } else {
+        console.error('❌ auth.currentUser IS NULL IN DASHBOARD!');
+      }
+    });
+
     listStudents({ status: 'ACTIVE' }).then(setStudents);
     listEmployees({ status: 'ACTIVE' }).then(setEmployees);
     listTransactions().then(setTransactions);
@@ -76,13 +86,12 @@ export default function AdminDashboard() {
     return days.map((d, i) => ({ day: d, value: 25000 + Math.round(Math.sin(i + tick) * 8000 + Math.random() * 12000) }));
   }, [tick]);
 
-  const activity = [
-    { type: 'admission', text: 'New admission · Aarav Sharma joined Class X', time: '2m ago', dot: 'bg-indigo-500' },
-    { type: 'fee', text: 'Fee payment received · ₹18,500 from Diya Patel', time: '14m ago', dot: 'bg-emerald-500' },
-    { type: 'attendance', text: 'Attendance marked · Class IX-B, 32/34 present', time: '38m ago', dot: 'bg-amber-500' },
-    { type: 'admission', text: 'Document submitted · Kabir Singh', time: '1h ago', dot: 'bg-indigo-500' },
-    { type: 'fee', text: 'Reminder dispatched · 6 parents via WhatsApp', time: '2h ago', dot: 'bg-emerald-500' },
-  ];
+  const [activity, setActivity] = useState([]);
+
+  useEffect(() => {
+    const unsub = subscribeRecentActivities(setActivity);
+    return unsub;
+  }, []);
 
   const loadInsights = useCallback(async () => {
     setInsightsLoading(true);
@@ -123,7 +132,7 @@ export default function AdminDashboard() {
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />{t('liveView')}
             </span>
           </div>
-          <p className="text-sm text-muted-foreground mt-1">Real-time signals across academics, finance and operations.</p>
+          <p className="text-sm text-muted-foreground mt-1">{t('realtimeSignals')}</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setTick((x) => x + 1)} data-testid="dashboard-refresh-btn" className="h-10 px-4 rounded-2xl bg-muted hover:bg-muted/80 flex items-center gap-2 text-[11px] font-black uppercase tracking-widest">
@@ -185,7 +194,7 @@ export default function AdminDashboard() {
           <div className="glass-morphism rounded-[2rem] p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="label-eyebrow text-muted-foreground">{t('recentActivity')}</div>
-              <button className="label-eyebrow text-primary">View All</button>
+              <button className="label-eyebrow text-primary">{t('viewAll')}</button>
             </div>
             <div className="space-y-3">
               {activity.map((a, i) => (
@@ -202,13 +211,13 @@ export default function AdminDashboard() {
           <div className="relative rounded-[2rem] p-6 bg-slate-950 text-white overflow-hidden">
             <div className="absolute -bottom-20 -right-20 h-64 w-64 rounded-full bg-indigo-500 glow-blob" />
             <div className="relative">
-              <div className="label-eyebrow text-white/50">Communication Log</div>
-              <h3 className="font-display font-black text-2xl tracking-tighter mt-1">126 messages dispatched today</h3>
-              <p className="text-sm text-white/70 mt-2 max-w-md">Auto-routed announcements, fee reminders, and absence notifications via WhatsApp + in-app.</p>
+              <div className="label-eyebrow text-white/50">{t('communicationLog')}</div>
+              <h3 className="font-display font-black text-2xl tracking-tighter mt-1">{t('messagesDispatchedToday')}</h3>
+              <p className="text-sm text-white/70 mt-2 max-w-md">{t('communicationDesc')}</p>
               <div className="flex gap-2 mt-4">
-                <span className="px-3 py-1 rounded-full bg-white/10 label-eyebrow">94 delivered</span>
-                <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 label-eyebrow">22 read</span>
-                <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 label-eyebrow">10 pending</span>
+                <span className="px-3 py-1 rounded-full bg-white/10 label-eyebrow">94 {t('delivered')}</span>
+                <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 label-eyebrow">22 {t('read')}</span>
+                <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 label-eyebrow">10 {t('pending')}</span>
               </div>
             </div>
           </div>
@@ -225,7 +234,7 @@ export default function AdminDashboard() {
                   Refresh
                 </button>
               </div>
-              <div className="font-display font-black text-lg tracking-tighter mt-1">Powered by Gemini 3 Flash</div>
+              <div className="font-display font-black text-lg tracking-tighter mt-1">{t('poweredByGemini')}</div>
               <div className="mt-4 space-y-3">
                 {insightsLoading && [1,2,3].map((i) => <div key={i} className="h-12 rounded-2xl bg-muted/60 animate-pulse" />)}
                 {!insightsLoading && (insights || []).map((line, i) => (
@@ -241,12 +250,12 @@ export default function AdminDashboard() {
           </div>
 
           <div className="glass-morphism rounded-[2rem] p-5">
-            <div className="label-eyebrow text-muted-foreground">Quick Glance</div>
+            <div className="label-eyebrow text-muted-foreground">{t('quickGlance')}</div>
             <div className="mt-3 space-y-3">
               {[
-                { icon: GraduationCap, label: 'Avg Class Strength', value: '34' },
-                { icon: TrendingUp, label: 'YoY Growth', value: '+12%' },
-                { icon: IndianRupee, label: 'Avg Fee/Student', value: '₹84,200' },
+                { icon: GraduationCap, label: t('avgClassStrength'), value: '34' },
+                { icon: TrendingUp, label: t('yoyGrowth'), value: '+12%' },
+                { icon: IndianRupee, label: t('avgFeeStudent'), value: '₹84,200' },
               ].map((r, i) => (
                 <div key={i} className="flex items-center gap-3 p-3 rounded-2xl bg-muted/30">
                   <div className="h-9 w-9 rounded-xl bg-primary/10 grid place-items-center"><r.icon className="h-4 w-4 text-primary" /></div>

@@ -129,9 +129,8 @@ export async function saveResult(data) {
 }
 export async function bulkSaveResults(rows) {
   if (!guard()) return [];
-  const results = [];
-  for (const r of rows) { const res = await saveResult(r); if (res) results.push(res); }
-  return results;
+  const results = await Promise.all(rows.map(r => saveResult(r)));
+  return results.filter(Boolean);
 }
 
 // ─── Lesson Plans ─────────────────────────────────────────────────────────────

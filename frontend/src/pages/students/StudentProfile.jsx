@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
-import { Mail, Phone, MapPin, Calendar, GraduationCap, IndianRupee, FileText, Edit, MessageCircle, Award, Loader2 } from 'lucide-react';
+import { Mail, Phone, MapPin, Calendar, GraduationCap, IndianRupee, FileText, Edit, MessageCircle, Award, Loader2, Download } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+import { toast } from 'sonner';
 import { getStudent } from '../../services/firebase/studentsService';
 import { listTransactions, listFeeCategories } from '../../services/firebase/financeService';
 import { listResults } from '../../services/firebase/academicService';
@@ -33,6 +36,8 @@ export default function StudentProfile() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('overview');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const sheetRef = useRef(null);
 
   useEffect(() => {
     const load = async () => {
@@ -87,6 +92,26 @@ export default function StudentProfile() {
     { k: 'documents', label: 'Documents' },
   ];
 
+  const generatePdf = async () => {
+    if (!student || !sheetRef.current) return;
+    setIsGenerating(true);
+    toast.loading('Generating info sheet...', { id: 'pdf-toast' });
+    try {
+      const canvas = await html2canvas(sheetRef.current, { scale: 2 });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${student.admissionNo}_${student.fullName.replace(/\\s+/g, '_')}_InfoSheet.pdf`);
+      toast.success('Downloaded Info Sheet!', { id: 'pdf-toast' });
+    } catch (e) {
+      toast.error('Error generating PDF', { id: 'pdf-toast' });
+    }
+    setIsGenerating(false);
+  };
+
   return (
     <div className="space-y-5" data-testid="student-profile">
       <NavLink to="/dashboard/students/directory" className="label-eyebrow text-primary">← Back to Directory</NavLink>
@@ -114,6 +139,9 @@ export default function StudentProfile() {
             <a href={getWhatsAppUrl(student.phoneNumber, `Hello regarding ${student.fullName}`)} target="_blank" rel="noreferrer" className="px-4 h-10 rounded-2xl bg-white text-indigo-700 label-eyebrow flex items-center gap-2" data-testid="profile-wa">
               <MessageCircle className="h-3.5 w-3.5" />WhatsApp
             </a>
+            <button onClick={generatePdf} disabled={isGenerating} className="px-4 h-10 rounded-2xl bg-white/15 hover:bg-white/25 label-eyebrow flex items-center gap-2 disabled:opacity-50">
+              {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}Download PDF
+            </button>
             <button onClick={() => navigate(`/dashboard/students/edit/${student.id}`)} className="px-4 h-10 rounded-2xl bg-white/15 hover:bg-white/25 label-eyebrow flex items-center gap-2" data-testid="profile-edit">
               <Edit className="h-3.5 w-3.5" />Edit
             </button>
@@ -258,6 +286,110 @@ export default function StudentProfile() {
           </div>
         </Section>
       )}
+      
+      {/* Hidden container for PDF rendering */}
+      <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+        <div ref={sheetRef} className="bg-white text-black p-10 w-[800px]">
+          <StudentInfoSheet student={student} />
+        </div>
+      </div>
+      
+    </div>
+  );
+}
+
+function StudentInfoSheet({ student }) {
+  if (!student) return null;
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="text-center border-b-2 border-black pb-6">
+        <h1 className="text-4xl font-black uppercase tracking-tight">St. Paul's High School</h1>
+        <p className="text-sm font-semibold mt-1 uppercase text-gray-600">Student Information Sheet</p>
+      </div>
+      
+      <div className="flex gap-6 items-start mt-8 mb-4">
+        {student.photoURL ? (
+          <img src={student.photoURL} alt="Photo" className="h-32 w-32 rounded-xl object-cover border border-gray-300" />
+        ) : (
+          <div className="h-32 w-32 rounded-xl border border-gray-300 bg-gray-100 grid place-items-center text-gray-400">No Photo</div>
+        )}
+        <div className="flex-1 space-y-1 text-sm">
+          <h2 className="text-2xl font-bold">{student.fullName}</h2>
+          <p><span className="text-gray-500 w-24 inline-block">Class:</span> <span className="font-semibold">{student.className} - {student.section}</span></p>
+          <p><span className="text-gray-500 w-24 inline-block">Roll No:</span> <span className="font-semibold">{student.rollNo || 'N/A'}</span></p>
+          <p><span className="text-gray-500 w-24 inline-block">Admission No:</span> <span className="font-semibold">{student.admissionNo}</span></p>
+          <p><span className="text-gray-500 w-24 inline-block">Status:</span> <span className="font-semibold">{student.status}</span></p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-8 text-sm">
+        <div>
+          <h3 className="font-bold border-b border-gray-300 pb-1 mb-2">Personal Details</h3>
+          <table className="w-full">
+            <tbody>
+              <tr><td className="py-0.5 text-gray-500 w-1/3">Date of Birth</td><td className="py-0.5 font-medium">{student.dateOfBirth}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Gender</td><td className="py-0.5 font-medium">{student.gender}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Blood Group</td><td className="py-0.5 font-medium">{student.bloodGroup || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Nationality</td><td className="py-0.5 font-medium">{student.nationality || 'Indian'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Religion</td><td className="py-0.5 font-medium">{student.religion || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Category</td><td className="py-0.5 font-medium">{student.category || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Mother Tongue</td><td className="py-0.5 font-medium">{student.motherTongue || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Aadhar</td><td className="py-0.5 font-medium">{student.aadharNumber || '—'}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h3 className="font-bold border-b border-gray-300 pb-1 mb-2">Admission Details</h3>
+          <table className="w-full">
+            <tbody>
+              <tr><td className="py-0.5 text-gray-500 w-1/3">Admission Date</td><td className="py-0.5 font-medium">{student.admissionDate?.slice(0,10) || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Academic Year</td><td className="py-0.5 font-medium">{student.academicYear || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Admission Type</td><td className="py-0.5 font-medium">{student.admissionType || 'New'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Previous School</td><td className="py-0.5 font-medium">{student.previousSchool || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Previous Class</td><td className="py-0.5 font-medium">{student.lastGradePassed || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">TC Number</td><td className="py-0.5 font-medium">{student.tcNumber || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Medium</td><td className="py-0.5 font-medium">{student.mediumOfInstruction || 'English'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Transport/Hostel</td><td className="py-0.5 font-medium">{[student.usesBus ? 'Bus' : null, student.inHostel ? 'Hostel' : null].filter(Boolean).join(' & ') || 'None'}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-8 text-sm mt-4">
+        <div>
+          <h3 className="font-bold border-b border-gray-300 pb-1 mb-2">Contact Details</h3>
+          <table className="w-full">
+            <tbody>
+              <tr><td className="py-0.5 text-gray-500 w-1/3">Phone</td><td className="py-0.5 font-medium">{student.phoneNumber}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Email</td><td className="py-0.5 font-medium">{student.email || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Address</td><td className="py-0.5 font-medium">{student.address || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">City</td><td className="py-0.5 font-medium">{student.city || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">State</td><td className="py-0.5 font-medium">{student.state || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">PIN</td><td className="py-0.5 font-medium">{student.pinCode || '—'}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h3 className="font-bold border-b border-gray-300 pb-1 mb-2">Parent/Guardian Details</h3>
+          <table className="w-full">
+            <tbody>
+              <tr><td className="py-0.5 text-gray-500 w-1/3">Father's Name</td><td className="py-0.5 font-medium">{student.fatherName || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Father Occ.</td><td className="py-0.5 font-medium">{student.fatherOccupation || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Father Phone</td><td className="py-0.5 font-medium">{student.fatherPhone || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Mother's Name</td><td className="py-0.5 font-medium">{student.motherName || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Mother Occ.</td><td className="py-0.5 font-medium">{student.motherOccupation || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Mother Phone</td><td className="py-0.5 font-medium">{student.motherPhone || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Guardian Name</td><td className="py-0.5 font-medium">{student.guardianName || '—'}</td></tr>
+              <tr><td className="py-0.5 text-gray-500">Annual Income</td><td className="py-0.5 font-medium">{student.annualIncome ? '₹' + student.annualIncome.toLocaleString('en-IN') : '—'}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      <div className="mt-8 text-center text-xs text-gray-400">
+        Generated by St. Paul's High School ERP
+      </div>
     </div>
   );
 }

@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { Search, AlertTriangle } from 'lucide-react';
-import { listStudents, removeStudent } from '../../services/firebase/studentsService';
+import { listStudents, removeStudent, updateStudent } from '../../services/firebase/studentsService';
 import { toast } from 'sonner';
 
 const REASONS = ['Transfer', 'Family Relocation', 'Fee Default', 'Rustication', 'Other'];
 
 export default function StudentRemoval() {
   const [all, setAll] = useState([]);
+  const [removedStudents, setRemovedStudents] = useState([]);
   const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState(null);
@@ -20,33 +21,48 @@ export default function StudentRemoval() {
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-  useEffect(() => {
+  const loadData = () => {
     listStudents({ status: 'ACTIVE' }).then(setAll);
+    listStudents({ status: 'REMOVED' }).then(setRemovedStudents);
+  };
+
+  useEffect(() => {
+    loadData();
   }, []);
 
   const matches = all.filter((s) => q && `${s.fullName} ${s.admissionNo}`.toLowerCase().includes(q.toLowerCase())).slice(0, 8);
 
   const confirm = async () => {
     if (!picked) return;
-    setSaving(true);
+    if (saving) return; setSaving(true);
     await removeStudent(picked.id, form.reason);
-    // Also persist extra TC details
+    
+    // Persist extra TC details
+    await updateStudent(picked.id, {
+      leavingDate: form.leavingDate,
+      internalNote: form.internalNote,
+      tcIssued: form.tcIssued,
+      tcDate: form.tcDate,
+      tcNumber: form.tcNumber,
+      remarks: form.remarks,
+    });
+    
     toast.success(`${picked.fullName} removed · TC ${form.tcNumber || 'pending'}`);
     setPicked(null); setQ('');
     setSaving(false);
-    setTimeout(() => navigate('/dashboard/students/directory'), 600);
+    loadData(); // Refresh the lists
   };
 
   return (
-    <div className="space-y-6 max-w-3xl" data-testid="student-removal">
-      <NavLink to=".." className="label-eyebrow text-primary">← Back to Students</NavLink>
+    <div className="space-y-6 max-w-4xl" data-testid="student-removal">
+      <NavLink to="/dashboard/students" className="label-eyebrow text-primary">← Back to Students</NavLink>
       <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Student Removal</h1>
 
       <div className="glass-morphism rounded-[2rem] p-5">
-        <label className="label-eyebrow text-muted-foreground">Find Student</label>
+        <label className="label-eyebrow text-muted-foreground">Find Student to Remove</label>
         <div className="mt-1.5 flex items-center gap-2 px-3 h-11 rounded-2xl border border-border bg-card">
           <Search className="h-4 w-4 text-muted-foreground" />
-          <input value={q} onChange={(e) => { setQ(e.target.value); setPicked(null); }} placeholder="Search by name or admission number…" className="flex-1 bg-transparent outline-none text-sm" data-testid="removal-search" />
+          <input value={q} onChange={(e) => { setQ(e.target.value); setPicked(null); }} placeholder="Search active student by name or admission number…" className="flex-1 bg-transparent outline-none text-sm" data-testid="removal-search" />
         </div>
         {q && !picked && (
           <div className="mt-3 space-y-2">
@@ -117,6 +133,47 @@ export default function StudentRemoval() {
           </div>
         </motion.div>
       )}
+
+      {/* Previously Removed Students Table */}
+      <div className="glass-morphism rounded-[2rem] p-5">
+        <h2 className="font-display font-bold text-xl mb-4 text-primary uppercase tracking-tight">Previously Removed Students</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-border/60 text-sm text-muted-foreground">
+                <th className="py-2 px-3 font-semibold">Name</th>
+                <th className="py-2 px-3 font-semibold">Admission No</th>
+                <th className="py-2 px-3 font-semibold">Dropped Out Class</th>
+                <th className="py-2 px-3 font-semibold">Date of Dropout (Year)</th>
+                <th className="py-2 px-3 font-semibold">TC Number</th>
+                <th className="py-2 px-3 font-semibold">Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {removedStudents.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-6 text-center text-muted-foreground text-sm">No removed students found.</td>
+                </tr>
+              )}
+              {removedStudents.map((s) => {
+                const dropDate = s.leavingDate ? new Date(s.leavingDate) : null;
+                const formattedDate = dropDate ? dropDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A';
+                return (
+                  <tr key={s.id} className="border-b border-border/30 hover:bg-muted/20 transition-colors text-sm">
+                    <td className="py-3 px-3 font-bold text-foreground">{s.fullName}</td>
+                    <td className="py-3 px-3 text-muted-foreground">{s.admissionNo}</td>
+                    <td className="py-3 px-3 text-muted-foreground">{s.className} - {s.section}</td>
+                    <td className="py-3 px-3 text-muted-foreground">{formattedDate}</td>
+                    <td className="py-3 px-3 text-muted-foreground">{s.tcNumber || 'N/A'}</td>
+                    <td className="py-3 px-3 text-muted-foreground">{s.removalReason || 'N/A'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
+

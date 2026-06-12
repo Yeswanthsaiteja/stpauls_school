@@ -42,7 +42,7 @@ export default function LessonPlanning() {
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.topic) return toast.error('Topic is required');
-    setSaving(true);
+    if (saving) return; setSaving(true);
     const sub = subjects.find((s) => s.id === form.subjectId);
     const row = await addLessonPlan({ ...form, subjectName: sub?.name || '', status: 'DRAFT' });
     if (row) {

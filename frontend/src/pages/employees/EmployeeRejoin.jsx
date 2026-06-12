@@ -5,9 +5,9 @@ import { Search, RefreshCcw } from 'lucide-react';
 import { listEmployees, rejoinEmployee } from '../../services/firebase/employeesService';
 import { toast } from 'sonner';
 
-const DEPARTMENTS = ['Primary', 'Secondary', 'Commerce', 'Science', 'Arts', 'Administration', 'Other'];
+const DEPARTMENTS = ['Teaching', 'Non teaching', 'Administration'];
 const ROLES = ['Teacher', 'Class Teacher', 'Principal', 'Vice Principal', 'Accountant', 'Librarian', 'Lab Assistant', 'Administrative', 'Support Staff'];
-const EMP_TYPES = ['Permanent', 'Contract', 'Part-time'];
+const EMP_TYPES = ['Probation', 'Permanent', 'Contract'];
 
 export default function EmployeeRejoin() {
   const navigate = useNavigate();
@@ -39,7 +39,7 @@ export default function EmployeeRejoin() {
 
   const confirm = async () => {
     if (!picked) return;
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try {
       const empId = form.keepOldId
         ? picked.employeeId

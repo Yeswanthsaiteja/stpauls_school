@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.stpauls.erp",
+      "sha256_cert_fingerprints": [
+        "1B:A6:FF:27:8A:A9:7F:7C:5A:F1:2C:4E:79:3D:10:09:29:C0:65:E4:C9:AD:50:51:19:A6:AA:29:53:2A:C7:FE"
+      ]
+    }
+  }
+]

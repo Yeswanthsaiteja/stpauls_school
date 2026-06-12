@@ -3,13 +3,14 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   GraduationCap, LayoutDashboard, Users, BookOpen, IndianRupee, UserSquare2,
-  CalendarCheck, MegaphoneIcon, Headset, IdCard, Bus, Hotel, Settings,
+  CalendarCheck, MegaphoneIcon, Headset, IdCard, Bus, Hotel, Settings, Library,
   Sun, Moon, LogOut, Menu, X, Bell, Search, ChevronLeft, Globe, AlertTriangle,
-  FileText, CheckSquare, MessageSquare, Check, BookMarked, ChevronRight,
+  FileText, CheckSquare, MessageSquare, Check, BookMarked, ChevronRight, Calendar,
 } from 'lucide-react';
 import { ParentChildContext } from '../pages/ParentDashboard';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import logoSrc from '../assets/logo.png';
 import { useTenant } from '../contexts/TenantContext';
 import { useTranslation } from 'react-i18next';
 import { isFirebaseConfigured } from '../lib/firebase';
@@ -25,6 +26,7 @@ const ROLE_NAV = {
     { to: '/dashboard/employees', icon: UserSquare2, key: 'employees' },
     { to: '/dashboard/attendance', icon: CalendarCheck, key: 'attendance' },
     { to: '/dashboard/communication', icon: MegaphoneIcon, key: 'communication' },
+    { to: '/dashboard/library', icon: Library, key: 'library' },
     { to: '/dashboard/crm', icon: Headset, key: 'crm' },
     { to: '/dashboard/diary', icon: BookMarked, key: 'diary' },
     { to: '/dashboard/id-cards', icon: IdCard, key: 'idCards' },
@@ -49,6 +51,8 @@ const ROLE_NAV = {
     { to: '/dashboard/parent-dashboard/attendance', icon: CalendarCheck, key: 'attendance' },
     { to: '/dashboard/parent-dashboard/finance', icon: IndianRupee, key: 'finance' },
     { to: '/dashboard/parent-dashboard/result', icon: BookOpen, key: 'results' },
+    { to: '/dashboard/parent-dashboard/exam-timetable', icon: Calendar, key: 'examTimetable' },
+    { to: '/dashboard/parent-dashboard/announcements', icon: Bell, key: 'announcements' },
     { to: '/dashboard/parent-dashboard/support', icon: Headset, key: 'support' },
     { to: '/dashboard/parent-dashboard/messages', icon: MegaphoneIcon, key: 'messages' },
     { to: '/dashboard/settings', icon: Settings, key: 'settings' },
@@ -65,8 +69,8 @@ const roleKey = (role) => {
   const r = role.toLowerCase().trim();
   if (r === 'school_admin' || r === 'admin') return 'ADMIN';
   if (r === 'parent') return 'PARENT';
-  if (STAFF_ROLES.has(r)) return 'STAFF';
-  return 'ADMIN';
+  // Any other role retrieved from the employees collection should see the STAFF dashboard
+  return 'STAFF';
 };
 
 // Notification type → icon colour
@@ -79,7 +83,7 @@ const NOTE_COLOURS = {
   ticket_update: 'bg-emerald-500/10 text-emerald-600',
 };
 
-function NotificationDropdown({ notifications, userId, onClose }) {
+function NotificationDropdown({ notifications, userId, onClose, t }) {
   const unread = notifications.filter(n => !n.read);
 
   const handleMarkAll = async () => {
@@ -94,7 +98,7 @@ function NotificationDropdown({ notifications, userId, onClose }) {
     const sec = n.createdAt?.seconds;
     if (!sec) return '';
     const diff = Math.floor((Date.now() / 1000) - sec);
-    if (diff < 60) return 'Just now';
+    if (diff < 60) return t('justNow');
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     return `${Math.floor(diff / 86400)}d ago`;
@@ -110,11 +114,11 @@ function NotificationDropdown({ notifications, userId, onClose }) {
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <span className="font-bold text-sm">Notifications</span>
+        <span className="font-bold text-sm">{t('notifications')}</span>
         <div className="flex items-center gap-2">
           {unread.length > 0 && (
             <button onClick={handleMarkAll} className="label-eyebrow text-primary text-[10px] hover:underline">
-              Mark all read
+              {t('markAllRead')}
             </button>
           )}
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-muted">
@@ -126,7 +130,7 @@ function NotificationDropdown({ notifications, userId, onClose }) {
       {/* List */}
       <div className="overflow-y-auto max-h-80 divide-y divide-border">
         {notifications.length === 0 && (
-          <div className="text-center text-sm text-muted-foreground py-8">No notifications yet</div>
+          <div className="text-center text-sm text-muted-foreground py-8">{t('noNotifications')}</div>
         )}
         {notifications.slice(0, 20).map((n) => (
           <div
@@ -169,14 +173,31 @@ export default function DashboardLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const bellRef = useRef(null);
+  const profileRef = useRef(null);
 
   // Multi-child switcher state — read from ParentChildContext if available
   const parentCtx = React.useContext(ParentChildContext);
   const isParent = roleKey(profile?.role) === 'PARENT';
 
-  const items = useMemo(() => ROLE_NAV[roleKey(profile?.role)] || [], [profile]);
+  const items = useMemo(() => {
+    const baseRole = roleKey(profile?.role);
+    let baseItems = [...(ROLE_NAV[baseRole] || [])];
+    
+    if (baseRole === 'STAFF' && profile?.permissions?.length > 0) {
+      const extraItems = ROLE_NAV.ADMIN.filter(item => profile.permissions.includes(item.key));
+      const settingsIdx = baseItems.findIndex(i => i.key === 'settings');
+      if (settingsIdx !== -1) {
+        baseItems = [...baseItems.slice(0, settingsIdx), ...extraItems, baseItems[settingsIdx]];
+      } else {
+        baseItems = [...baseItems, ...extraItems];
+      }
+    }
+    
+    return baseItems;
+  }, [profile]);
 
   // Determine current user's notification userId
   const notifUserId = useMemo(() => {
@@ -193,15 +214,20 @@ export default function DashboardLayout() {
     return unsub;
   }, [notifUserId]);
 
-  // Close bell dropdown when clicking outside
+  // Close bell/profile dropdown when clicking outside
   useEffect(() => {
-    if (!bellOpen) return;
-    const handler = (e) => {
-      if (bellRef.current && !bellRef.current.contains(e.target)) setBellOpen(false);
+    if (!bellOpen && !profileOpen) return;
+    const handleClickOutside = (e) => {
+      if (bellRef.current && !bellRef.current.contains(e.target)) {
+        setBellOpen(false);
+      }
+      if (profileRef.current && !profileRef.current.contains(e.target)) {
+        setProfileOpen(false);
+      }
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [bellOpen]);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [bellOpen, profileOpen]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -214,18 +240,10 @@ export default function DashboardLayout() {
 
   const SidebarBody = (
     <div className="h-full flex flex-col">
-      <div className="px-5 pt-6 pb-4 flex items-center gap-3">
-        <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 grid place-items-center text-white shadow-lg shadow-indigo-500/30">
-          {tenant?.logoUrl ? (
-            <img src={tenant.logoUrl} alt="logo" className="h-full w-full object-cover rounded-2xl" />
-          ) : <GraduationCap className="h-5 w-5" />}
-        </div>
-        {!collapsed && (
-          <div className="leading-tight">
-            <div className="font-display font-black text-base tracking-tight">{tenant?.name || "St. Paul's High School"}</div>
-            <div className="label-eyebrow text-muted-foreground">{t('appSub')}</div>
-          </div>
-        )}
+      <div className="px-4 pt-6 pb-4 flex items-center justify-center">
+        <button onClick={() => navigate('/dashboard')} className={`transition-all duration-300 overflow-hidden outline-none cursor-pointer hover:scale-105 ${collapsed ? 'w-12 h-12' : 'w-full px-2 h-28'}`}>
+          <img src={logoSrc} alt="St. Paul's High School" className="w-full h-full object-contain" />
+        </button>
       </div>
 
       <div className="px-5 mt-3 mb-2">
@@ -265,23 +283,10 @@ export default function DashboardLayout() {
         ))}
       </nav>
 
-      <div className="p-3 mt-auto space-y-1 border-t border-border">
-        <button
-          data-testid="theme-toggle-sidebar"
-          onClick={toggle}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
-        >
-          {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
-          {!collapsed && <span className="text-sm font-bold">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>}
-        </button>
-        <button
-          data-testid="sign-out-btn"
-          onClick={handleSignOut}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
-        >
-          <LogOut className="h-[18px] w-[18px]" />
-          {!collapsed && <span className="text-sm font-bold">{t('signOut')}</span>}
-        </button>
+      <div className="px-4 pb-2">
+      </div>
+
+      <div className="p-3 mt-auto">
       </div>
     </div>
   );
@@ -330,7 +335,7 @@ export default function DashboardLayout() {
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Topbar */}
-        <header className="sticky top-0 z-30 border-b border-border bg-background/70 backdrop-blur-xl">
+        <header className="sticky top-0 z-50 border-b border-border bg-background/70 backdrop-blur-xl">
           <div className="flex items-center justify-between px-4 sm:px-6 h-16 gap-3">
             <div className="flex items-center gap-3 min-w-0 flex-1">
               <button onClick={() => setMobileOpen(true)} className="lg:hidden p-2 rounded-xl hover:bg-muted" data-testid="mobile-menu-open">
@@ -399,20 +404,64 @@ export default function DashboardLayout() {
                       notifications={notifications}
                       userId={notifUserId}
                       onClose={() => setBellOpen(false)}
+                      t={t}
                     />
                   )}
                 </AnimatePresence>
               </div>
 
               <div className="hidden sm:block h-6 w-px bg-border mx-1" />
-              <div className="flex items-center gap-2.5">
-                <div className="hidden sm:block leading-tight text-right">
-                  <div className="text-sm font-bold">{profile?.fullName || profile?.displayName || 'User'}</div>
-                  <div className="label-eyebrow text-muted-foreground">{profile?.role || 'GUEST'}</div>
-                </div>
-                <div className="h-9 w-9 rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center text-white text-sm font-black">
-                  {(profile?.fullName || profile?.email || 'U')[0].toUpperCase()}
-                </div>
+              
+              <div className="hidden sm:block h-6 w-px bg-border mx-1" />
+
+              <div className="relative" ref={profileRef}>
+                <button
+                  onClick={() => setProfileOpen(v => !v)}
+                  className="flex items-center gap-2.5 p-1 rounded-full hover:bg-muted/50 transition-colors"
+                >
+                  <div className="hidden sm:block leading-tight text-right">
+                    <div className="text-sm font-bold">{profile?.fullName || profile?.displayName || 'User'}</div>
+                    <div className="label-eyebrow text-muted-foreground">{profile?.role || 'GUEST'}</div>
+                  </div>
+                  <div className="h-9 w-9 rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center text-white text-sm font-black">
+                    {(profile?.fullName || profile?.email || 'U')[0].toUpperCase()}
+                  </div>
+                </button>
+
+                <AnimatePresence>
+                  {profileOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-[1.5rem] shadow-xl z-50 overflow-hidden"
+                    >
+                      <div className="p-3 border-b border-border bg-muted/30">
+                        <div className="font-bold text-sm text-foreground truncate">{profile?.fullName || profile?.displayName || 'User'}</div>
+                        <div className="text-xs text-muted-foreground truncate">{profile?.email || profile?.phoneNumber || ''}</div>
+                      </div>
+                      <div className="p-2 space-y-1">
+                        <button
+                          data-testid="theme-toggle-dropdown"
+                          onClick={() => { toggle(); setProfileOpen(false); }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-muted transition-colors text-sm font-semibold text-muted-foreground hover:text-foreground"
+                        >
+                          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                          {theme === 'dark' ? t('lightMode') : t('darkMode')}
+                        </button>
+                        <button
+                          data-testid="sign-out-dropdown"
+                          onClick={() => { handleSignOut(); setProfileOpen(false); }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors text-sm font-semibold"
+                        >
+                          <LogOut className="h-4 w-4" />
+                          {t('signOut')}
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
           </div>

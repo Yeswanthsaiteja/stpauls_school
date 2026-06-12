@@ -131,3 +131,8 @@ body {
   opacity: 0.55;
   pointer-events: none;
 }
+
+/* Hide invisible reCAPTCHA badge */
+.grecaptcha-badge {
+  visibility: hidden !important;
+}

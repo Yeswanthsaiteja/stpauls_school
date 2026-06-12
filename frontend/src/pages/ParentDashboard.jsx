@@ -1,4 +1,4 @@
-import React, { useEffect, useState, createContext, useContext, useCallback } from 'react';
+import React, { useEffect, useState, createContext, useContext, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Routes, Route, useNavigate, NavLink } from 'react-router-dom';
 import OnlineExams from './OnlineExams';
@@ -9,23 +9,24 @@ import TeacherMessaging from './TeacherMessaging';
 import {
   BookOpen, Bell, IndianRupee, ClipboardCheck, FileText, Library,
   Calendar, MessageSquare, MapPin, Gamepad2, Phone, Camera,
-  Headset, Send, Plus, RefreshCw, BookMarked,
+  Headset, Send, Plus, RefreshCw, BookMarked, FileDown, Receipt
 } from 'lucide-react';
+import { downloadElementAsPDF } from '../lib/pdfUtils';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { getStudent } from '../services/firebase/studentsService';
-import { listTransactions } from '../services/firebase/financeService';
-import { listFeeCategories } from '../services/firebase/financeService';
-import { listResults } from '../services/firebase/academicService';
+import { listTransactions, listFeeCategories, allocatePayment, computeTermPaid } from '../services/firebase/financeService';
+import { listResults, listExamSetups } from '../services/firebase/academicService';
 import { getStudentAttendanceSummary, listAttendance } from '../services/firebase/attendanceService';
+import { listHolidays } from '../services/firebase/holidaysService';
 import { listTickets, addTicket } from '../services/firebase/communicationService';
 import { listEmployees } from '../services/firebase/employeesService';
-import { listMessages, sendMessage } from '../services/firebase/communicationService';
+import { listMessages, sendMessage, listAnnouncements } from '../services/firebase/communicationService';
 import { listDiaryEntries } from '../services/firebase/communicationService';
 import { getWhatsAppUrl } from '../lib/utils';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { addNotification } from '../services/firebase/notificationsService';
 
 // ─── Parent Context (active child shared across all sub-pages) ────────────────
@@ -47,35 +48,69 @@ const MODULES = [
 ];
 
 // ─── Shared layout for sub-pages ─────────────────────────────────────────────
-const SimplePage = ({ title, description, children, testId }) => (
-  <div className="space-y-5" data-testid={testId}>
-    <NavLink to=".." relative="path" className="label-eyebrow text-primary">← Back</NavLink>
-    <h2 className="font-display font-black text-3xl tracking-tighter uppercase">{title}</h2>
-    {description && <p className="text-sm text-muted-foreground">{description}</p>}
-    <div className="glass-morphism rounded-[2rem] p-6">{children}</div>
-  </div>
-);
-
-// ─── Announcements (static for now) ──────────────────────────────────────────
-const Announcements = () => (
-  <SimplePage title="Announcements" testId="parent-announcements">
-    <div className="space-y-3">
-      {[
-        { title: 'School Annual Day — Dec 22', date: '2025-12-10', description: 'Annual Day will be held on 22nd December at 5 PM. Parents are cordially invited.' },
-        { title: 'Fee Reminder — Q3 Installment', date: '2025-12-05', description: 'Q3 fee installment is due by December 15. Please clear dues to avoid late fees.' },
-        { title: 'PTM — December 18', date: '2025-12-01', description: 'Parent-Teacher Meeting scheduled for Saturday, December 18 from 10 AM to 1 PM.' },
-      ].map((a, i) => (
-        <div key={i} className="p-4 rounded-2xl bg-muted/30 border border-border">
-          <div className="flex items-center justify-between">
-            <div className="font-bold">{a.title}</div>
-            <span className="label-eyebrow text-muted-foreground">{new Date(a.date).toLocaleDateString()}</span>
-          </div>
-          <p className="text-sm text-muted-foreground mt-1">{a.description}</p>
+const SimplePage = ({ title, description, children, testId }) => {
+  const { linkedStudents, childIdx, setChildIdx } = useParentChild();
+  return (
+    <div className="space-y-5" data-testid={testId}>
+      <NavLink to=".." relative="path" className="label-eyebrow text-primary">← Back</NavLink>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="font-display font-black text-3xl tracking-tighter uppercase">{title}</h2>
+          {description && <p className="text-sm text-muted-foreground">{description}</p>}
         </div>
-      ))}
+      </div>
+      <div className="glass-morphism rounded-[2rem] p-6">{children}</div>
     </div>
-  </SimplePage>
-);
+  );
+};
+
+// ─── Announcements ──────────────────────────────────────────
+const Announcements = () => {
+  const { activeChild } = useContext(ParentChildContext);
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    listAnnouncements().then(data => {
+      // Filter for parents, and optionally for specific class/section if specified
+      const filtered = data.filter(a => {
+        if (a.targetRole !== 'ALL' && a.targetRole !== 'PARENT') return false;
+        
+        // If it targets a specific class, must match activeChild
+        if (a.targetRole === 'PARENT' && a.targetClass) {
+          if (!activeChild) return false;
+          if (a.targetClass !== activeChild.className) return false;
+          if (a.targetSection && a.targetSection !== activeChild.section) return false;
+        }
+        
+        return true;
+      });
+      setList(filtered);
+      setLoading(false);
+    });
+  }, [activeChild]);
+
+  return (
+    <SimplePage title="Announcements" testId="parent-announcements">
+      {loading ? (
+        <div className="flex justify-center py-8"><RefreshCw className="h-6 w-6 animate-spin text-primary" /></div>
+      ) : (
+        <div className="space-y-3">
+          {list.length === 0 && <div className="text-center text-sm text-muted-foreground py-8">No new announcements.</div>}
+          {list.map((a, i) => (
+            <div key={a.id || i} className="p-4 rounded-2xl bg-muted/30 border border-border">
+              <div className="flex items-center justify-between">
+                <div className="font-bold text-foreground">{a.title}</div>
+                <span className="label-eyebrow text-muted-foreground">{a.date}</span>
+              </div>
+              <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{a.description}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </SimplePage>
+  );
+};
 
 // ─── Result page — loads from Firestore for active child ─────────────────────
 const Result = () => {
@@ -87,8 +122,30 @@ const Result = () => {
   useEffect(() => {
     if (!studentId) { setLoading(false); return; }
     setLoading(true);
-    listResults({}).then(r => {
-      setList(r.filter(x => x.studentId === studentId));
+    
+    Promise.all([
+      listResults({ studentId }),
+      listExamSetups()
+    ]).then(([resultsData, examsData]) => {
+      // Filter out results if their associated exam setup does not have a past releaseDate
+      const now = new Date();
+      
+      const allowedExams = new Set();
+      examsData.forEach(ex => {
+        if (ex.releaseDate && new Date(ex.releaseDate) <= now) {
+          // Both examType or customName might be used, store both to be safe
+          if (ex.examType !== 'Other') allowedExams.add(ex.examType);
+          if (ex.customName) allowedExams.add(ex.customName);
+        }
+      });
+      
+      // Some old results might not have examType, but if they do, strictly enforce releaseDate
+      const visibleResults = resultsData.filter(r => {
+        if (!r.examType) return true; // fallback for legacy data
+        return allowedExams.has(r.examType);
+      });
+      
+      setList(visibleResults);
       setLoading(false);
     });
   }, [studentId]);
@@ -98,7 +155,7 @@ const Result = () => {
   return (
     <SimplePage title="Results" testId="parent-result">
       {loading ? <div className="text-center text-muted-foreground py-4">Loading…</div> :
-        list.length === 0 ? <div className="text-center text-muted-foreground py-4">No results found yet</div> :
+        list.length === 0 ? <div className="text-center text-muted-foreground py-4">No results have been released yet.</div> :
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {list.map((r, i) => (
             <div key={r.id || i} className="p-4 rounded-2xl border border-border">
@@ -106,11 +163,11 @@ const Result = () => {
                 <div className="font-bold">{r.subject || r.subjectName}</div>
                 <span className={`px-2.5 py-1 rounded-full label-eyebrow ${gradeColor(r.grade)}`}>{r.grade}</span>
               </div>
-              <div className="mt-3 flex items-baseline gap-2">
+              {r.examType && <div className="text-xs text-muted-foreground mt-1 mb-2">Exam: <span className="font-bold">{r.examType}</span></div>}
+              <div className="mt-2 flex items-baseline gap-2">
                 <div className="font-display font-black text-3xl tracking-tighter">{r.marks}</div>
                 <div className="text-sm text-muted-foreground">/ {r.totalMarks || 100}</div>
               </div>
-              <div className="label-eyebrow text-muted-foreground mt-1">{r.examType}</div>
             </div>
           ))}
         </div>
@@ -137,79 +194,141 @@ const Finance = () => {
   const { profile } = useAuth();
   const studentId = activeChild?.id;
   const studentClass = activeChild?.className || '';
+  
   const [transactions, setTransactions] = useState([]);
   const [feeCategories, setFeeCategories] = useState([]);
+  const [concessionsV2, setConcessionsV2] = useState([]);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
+
+  const [selectedCategoryId, setSelectedCategoryId] = useState('');
+  const [payAmount, setPayAmount] = useState('');
+  const [receiptToDownload, setReceiptToDownload] = useState(null);
 
   const loadData = useCallback(async () => {
     if (!studentId) { setLoading(false); return; }
     setLoading(true);
-    const [txns, cats] = await Promise.all([
+    const { listConcessionsV2 } = await import('../services/firebase/financeService');
+    const [txns, cats, cv2] = await Promise.all([
       listTransactions({ studentId }),
       listFeeCategories(),
+      listConcessionsV2(),
     ]);
     setTransactions(txns);
     setFeeCategories(cats);
+    setConcessionsV2(cv2);
+    if (cats.length > 0 && !selectedCategoryId) {
+      setSelectedCategoryId(cats[0].id);
+    }
     setLoading(false);
-  }, [studentId]);
+  }, [studentId, selectedCategoryId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Paid = actual transactions with PAID status
-  const paid = transactions.filter(x => x.status === 'PAID').reduce((s, x) => s + (x.amount || 0), 0);
+  const today = new Date().toISOString().slice(0, 10);
+  const studentCons = concessionsV2.filter(c => c.studentId === studentId);
 
-  // Pending = fee categories for student's class minus already-paid transactions
-  const paidFeeNames = new Set(transactions.filter(x => x.status === 'PAID').map(t => t.feeName));
-  const pendingFromCategories = feeCategories
-    .filter(cat => cat.appliesTo === 'all' || cat.appliesTo === undefined)
-    .map(cat => {
-      const amount = (cat.amounts && (cat.amounts[studentClass] ?? cat.amounts['default'])) || cat.amount || 0;
-      return { id: cat.id, feeName: cat.name, amount, status: 'PENDING', source: 'category' };
-    })
-    .filter(item => item.amount > 0 && !paidFeeNames.has(item.name));
+  let totalPaid = 0;
+  let totalPending = 0;
+  let totalOverdue = 0;
+  
+  const categoryBreakdown = feeCategories.map(cat => {
+    const terms = (cat.terms || []).map(term => {
+      const feeAmt = Number((term.amounts?.[studentClass]) ?? (term.amounts?.['default']) ?? 0);
+      if (feeAmt <= 0) return null;
+      const concAmt = Number(studentCons.find(c => c.categoryId === cat.id && c.termId === term.id)?.amount || 0);
+      const termPaid = computeTermPaid(transactions, cat.id, term.id);
+      const effectiveFee = feeAmt - concAmt;
+      const termDue = Math.max(0, effectiveFee - termPaid);
+      const isOverdue = term.dueDate && term.dueDate < today && termDue > 0;
+      let status = 'PENDING';
+      if (termDue <= 0) status = 'PAID';
+      else if (termPaid > 0) status = isOverdue ? 'OVERDUE' : 'PARTIAL';
+      else if (isOverdue) status = 'OVERDUE';
+      return { ...term, feeAmt, concAmt, termPaid, effectiveFee, termDue, status };
+    }).filter(Boolean);
 
-  // Also include PENDING transactions
-  const pendingTxns = transactions.filter(x => x.status === 'PENDING');
+    if (terms.length === 0) return null;
+    const catFee = terms.reduce((s, t) => s + t.feeAmt, 0);
+    const catConc = terms.reduce((s, t) => s + t.concAmt, 0);
+    const catPaid = terms.reduce((s, t) => s + t.termPaid, 0);
+    const catDue = terms.reduce((s, t) => s + t.termDue, 0);
+    const hasOverdue = terms.some(t => t.status === 'OVERDUE');
 
-  const pending = [...pendingFromCategories, ...pendingTxns].reduce((s, x) => s + (x.amount || 0), 0);
+    totalPaid += catPaid;
+    totalPending += catDue;
+    if (hasOverdue) {
+      totalOverdue += terms.filter(t => t.status === 'OVERDUE').reduce((s, t) => s + t.termDue, 0);
+    }
 
-  // All items for display
-  const allItems = [
-    ...transactions,
-    ...pendingFromCategories,
-  ];
+    return { ...cat, terms, catFee, catConc, catPaid, catDue, hasOverdue };
+  }).filter(Boolean);
+
+  const previewAlloc = useMemo(() => {
+    if (!selectedCategoryId || !payAmount) return [];
+    const cat = feeCategories.find(c => c.id === selectedCategoryId);
+    if (!cat) return [];
+    const studentConcs = concessionsV2.filter(c => c.studentId === studentId);
+    const { allocations } = allocatePayment(Number(payAmount), cat.terms || [], studentClass, transactions, studentConcs, cat.id);
+    return allocations;
+  }, [selectedCategoryId, payAmount, feeCategories, studentClass, transactions, concessionsV2, studentId]);
 
   const payUPI = async () => {
-    if (pending <= 0) return toast.error('No pending fees to pay');
+    if (!selectedCategoryId) return toast.error('Select a fee category');
+    const amt = Number(payAmount);
+    if (!amt || amt <= 0) return toast.error('Enter a valid amount to pay');
+
+    const cat = feeCategories.find(c => c.id === selectedCategoryId);
+    const catDue = categoryBreakdown.find(c => c.id === selectedCategoryId);
+    
+    if (!catDue || catDue.catDue <= 0) return toast.error('No pending fees for this category');
+    if (amt > catDue.catDue + 0.01) return toast.error(`Amount exceeds the pending ₹${catDue.catDue.toLocaleString('en-IN')}`);
+
+    const studentConcs = concessionsV2.filter(c => c.studentId === studentId);
+    const { allocations } = allocatePayment(amt, cat?.terms || [], studentClass, transactions, studentConcs, selectedCategoryId);
+
     setPaying(true);
     try {
       const loaded = await loadRazorpayScript();
-      if (!loaded) { toast.error('Failed to load payment gateway. Please try again.'); setPaying(false); return; }
+      if (!loaded) { toast.error('Failed to load payment gateway.'); setPaying(false); return; }
 
       const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
-      let orderId, amount;
+      let orderId, amountValue;
+      const childName = activeChild?.name || profile?.linkedStudentName || 'Student';
+      const receiptNo = `RCPT${Date.now().toString().slice(-8)}`;
+
       try {
+        const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
         const res = await fetch(`${backendUrl}/api/payments/create-order`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount: pending, currency: 'INR', studentId }),
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ 
+            amount: amt * 100, 
+            currency: 'INR', 
+            studentId,
+            receipt: receiptNo,
+            studentName: childName,
+            feeName: cat?.name || 'Online Fee Payment'
+          }),
         });
         const data = await res.json();
-        orderId = data.id;
-        amount = data.amount;
-      } catch {
+        if (!res.ok) throw new Error(data.detail || 'Failed to create order');
+        orderId = data.id || data.orderId;
+        amountValue = data.amount;
+      } catch (e) {
+        console.error('Order creation error:', e);
         orderId = null;
-        amount = pending * 100;
+        amountValue = amt * 100;
       }
-
-      const childName = activeChild?.name || profile?.linkedStudentName || 'Student';
       const options = {
         key: process.env.REACT_APP_RAZORPAY_KEY_ID || '',
-        amount: amount || pending * 100,
+        amount: amountValue || amt * 100,
         currency: 'INR',
         name: "St. Paul's High School",
-        description: `Fee Payment — ${childName}`,
+        description: `Fee Payment — ${cat?.name || 'Online'}`,
         order_id: orderId || undefined,
         method: { upi: true, card: false, netbanking: false, wallet: false, emi: false },
         prefill: { contact: (profile?.phone || '').replace(/\D/g, '').slice(-10), name: profile?.fullName },
@@ -219,17 +338,27 @@ const Finance = () => {
             await addDoc(collection(db, 'transactions'), {
               studentId,
               studentName: childName,
-              amount: pending,
+              amount: amt,
+              categoryId: selectedCategoryId,
+              feeName: cat?.name || 'Online Fee Payment',
               status: 'PAID',
               paymentMode: 'UPI',
+              paymentMethod: 'ONLINE',
               paymentId: response.razorpay_payment_id,
-              feeName: 'UPI Fee Payment',
+              receiptNo,
+              termAllocations: allocations,
               tenantId: process.env.REACT_APP_TENANT_ID || 'stpauls',
               paidAt: serverTimestamp(),
+              paymentDate: new Date().toISOString(),
+              admissionNo: activeChild?.admissionNo || profile?.linkedStudentAdmissionNo || '',
+              className: activeChild?.className || profile?.linkedStudentClass || '',
+              section: activeChild?.section || profile?.linkedStudentSection || '',
+              fatherName: activeChild?.fatherName || profile?.fatherName || '',
             });
-            toast.success('Payment successful! Receipt recorded.');
+            toast.success('Payment successful!');
+            setPayAmount('');
             loadData();
-          } catch { toast.success('Payment successful!'); }
+          } catch (e) { console.error(e); toast.error('Payment verified, but saving failed. Please contact admin.'); }
         },
         modal: { ondismiss: () => setPaying(false) },
       };
@@ -248,43 +377,198 @@ const Finance = () => {
     setPaying(false);
   };
 
+  const getStatusStyle = (status) => {
+    if (status === 'PAID') return 'bg-emerald-500/10 text-emerald-600';
+    if (status === 'OVERDUE') return 'bg-rose-500/10 text-rose-600';
+    if (status === 'PARTIAL') return 'bg-amber-500/10 text-amber-600';
+    return 'bg-muted text-muted-foreground';
+  };
+
   return (
     <SimplePage title="Fees" testId="parent-finance">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-        <div className="p-4 rounded-2xl bg-emerald-500/10"><div className="label-eyebrow text-emerald-600">Paid</div><div className="font-display font-black text-2xl tracking-tighter">₹{paid.toLocaleString()}</div></div>
-        <div className="p-4 rounded-2xl bg-amber-500/10"><div className="label-eyebrow text-amber-600">Pending</div><div className="font-display font-black text-2xl tracking-tighter">₹{pending.toLocaleString()}</div></div>
-        <div className="p-4 rounded-2xl bg-rose-500/10"><div className="label-eyebrow text-rose-600">Overdue</div><div className="font-display font-black text-2xl tracking-tighter">₹0</div></div>
+        <div className="p-4 rounded-2xl bg-emerald-500/10"><div className="label-eyebrow text-emerald-600">Paid</div><div className="font-display font-black text-2xl tracking-tighter">₹{totalPaid.toLocaleString()}</div></div>
+        <div className="p-4 rounded-2xl bg-amber-500/10"><div className="label-eyebrow text-amber-600">Pending</div><div className="font-display font-black text-2xl tracking-tighter">₹{totalPending.toLocaleString()}</div></div>
+        <div className="p-4 rounded-2xl bg-rose-500/10"><div className="label-eyebrow text-rose-600">Overdue</div><div className="font-display font-black text-2xl tracking-tighter">₹{totalOverdue.toLocaleString()}</div></div>
       </div>
 
-      {/* UPI Pay button */}
-      {pending > 0 && (
-        <button onClick={payUPI} disabled={paying}
-          className="w-full mb-5 py-3 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white font-black label-eyebrow flex items-center justify-center gap-2 disabled:opacity-60">
-          {paying ? (
-            <><RefreshCw className="h-4 w-4 animate-spin" />Opening payment…</>
-          ) : (
-            <>Pay ₹{pending.toLocaleString()} via UPI</>
+      {/* Payment Form */}
+      {totalPending > 0 && (
+        <div className="p-5 rounded-2xl border border-border bg-card mb-5 space-y-4">
+          <div className="label-eyebrow text-muted-foreground">Make a Payment</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label-eyebrow text-muted-foreground">Select Fee Category</label>
+              <select value={selectedCategoryId} onChange={e => setSelectedCategoryId(e.target.value)}
+                className="mt-1.5 w-full h-11 px-3 rounded-xl border border-border bg-background text-sm">
+                <option value="">Select category...</option>
+                {categoryBreakdown.filter(c => c.catDue > 0).map(c => (
+                  <option key={c.id} value={c.id}>{c.name} (Due: ₹{c.catDue.toLocaleString()})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label-eyebrow text-muted-foreground">Amount (₹)</label>
+              <input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)}
+                placeholder="Enter amount"
+                className="mt-1.5 w-full h-11 px-4 rounded-xl border border-border bg-background text-sm" />
+            </div>
+          </div>
+
+          {previewAlloc.length > 0 && (
+            <div className="p-3 rounded-xl bg-indigo-500/5 border border-indigo-500/20 space-y-1">
+              <div className="label-eyebrow text-indigo-500 text-[10px] mb-2">Smart Allocation Preview</div>
+              {previewAlloc.map((a, i) => (
+                <div key={i} className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">{a.termName}</span>
+                  <span className="font-bold text-indigo-600">₹{a.amount.toLocaleString('en-IN')}</span>
+                </div>
+              ))}
+            </div>
           )}
-        </button>
+
+          <button onClick={payUPI} disabled={paying || !payAmount || !selectedCategoryId}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-black label-eyebrow flex items-center justify-center gap-2 disabled:opacity-50 transition-colors">
+            {paying ? (
+              <><RefreshCw className="h-4 w-4 animate-spin" />Opening Gateway…</>
+            ) : (
+              <>Pay via UPI</>
+            )}
+          </button>
+        </div>
       )}
 
       {loading ? <div className="text-center text-muted-foreground py-4">Loading…</div> :
-        allItems.length === 0 ? <div className="text-center text-muted-foreground py-4">No fee records found</div> :
-        <div className="space-y-2">
-          {allItems.map((t, i) => (
-            <div key={t.id || i} className="flex items-center justify-between p-3 rounded-2xl border border-border">
-              <div>
-                <div className="font-bold text-sm">{t.feeName || t.description || 'Fee'}</div>
-                <div className="label-eyebrow text-muted-foreground">{t.receiptNo} {t.paymentMode ? `· ${t.paymentMode}` : ''}{t.source === 'category' ? '· Due' : ''}</div>
+        categoryBreakdown.length === 0 ? <div className="text-center text-muted-foreground py-4">No fee records found</div> :
+        <div className="space-y-4">
+          <div className="label-eyebrow text-muted-foreground">Fee Breakdown</div>
+          {categoryBreakdown.map((cat, i) => (
+            <div key={cat.id || i} className="rounded-2xl border border-border overflow-hidden bg-card">
+              <div className="flex items-center justify-between p-4 bg-muted/20 border-b border-border/50">
+                <div>
+                  <div className="font-bold">{cat.name}</div>
+                  <div className="text-xs text-muted-foreground">Total: ₹{cat.catFee.toLocaleString()} {cat.catConc > 0 ? `(-₹${cat.catConc} conc.)` : ''}</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-display font-black tracking-tighter text-emerald-600">₹{cat.catPaid.toLocaleString()} paid</div>
+                  <div className={`text-xs font-bold ${cat.catDue > 0 ? 'text-rose-500' : 'text-muted-foreground'}`}>{cat.catDue > 0 ? `₹${cat.catDue.toLocaleString()} pending` : '✓ Cleared'}</div>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="font-display font-black tracking-tighter">₹{(t.amount || 0).toLocaleString()}</div>
-                <span className={`px-2.5 py-1 rounded-full label-eyebrow ${t.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-500' : t.status === 'PENDING' ? 'bg-amber-500/10 text-amber-500' : 'bg-rose-500/10 text-rose-500'}`}>{t.status}</span>
+              <div className="divide-y divide-border/30">
+                {cat.terms.map(t => (
+                  <div key={t.id} className="p-3 flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-sm">{t.name}</div>
+                      <div className="label-eyebrow text-muted-foreground mt-0.5">Due: {t.dueDate || 'N/A'} {t.concAmt > 0 && <span className="text-amber-500 ml-1">(-₹{t.concAmt})</span>}</div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right flex flex-col items-end">
+                        <span className="text-emerald-600 font-bold">₹{t.termPaid.toLocaleString()}</span>
+                        <span className="text-xs text-muted-foreground"> / ₹{t.effectiveFee.toLocaleString()}</span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full label-eyebrow text-[9px] ${getStatusStyle(t.status)}`}>{t.status}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}
+          
+          <div className="flex items-center justify-between mt-6 mb-3">
+            <div className="label-eyebrow text-muted-foreground">Payment History</div>
+            <div className="label-eyebrow text-muted-foreground">Download Receipt</div>
+          </div>
+          <div className="space-y-2">
+            {transactions.length === 0 && <div className="text-sm text-muted-foreground py-4 text-center">No transactions yet</div>}
+            {transactions.map((t, i) => (
+              <div key={t.id || i} className="flex items-center justify-between p-3 rounded-2xl border border-border">
+                <div>
+                  <div className="font-bold text-sm">{t.feeName || 'Fee Payment'}</div>
+                  <div className="label-eyebrow text-muted-foreground">{t.receiptNo} {t.paymentMode ? `· ${t.paymentMode}` : ''}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">{new Date(t.paymentDate || t.paidAt?.toDate() || Date.now()).toLocaleDateString('en-IN')}</div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <div className="font-display font-black tracking-tighter">₹{(t.amount || 0).toLocaleString()}</div>
+                    <span className={`px-2 py-0.5 rounded-full label-eyebrow text-[9px] ${t.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>{t.status}</span>
+                  </div>
+                  {t.status === 'PAID' && (
+                    <button onClick={async () => {
+                        let receiptData = { ...t };
+                        if (!receiptData.fatherName || !receiptData.className) {
+                          const student = await getStudent(t.studentId);
+                          if (student) {
+                            receiptData.fatherName = student.fatherName || student.parentName || receiptData.fatherName || '';
+                            receiptData.className = student.className || receiptData.className || '';
+                            receiptData.section = student.section || receiptData.section || '';
+                            receiptData.admissionNo = student.admissionNo || receiptData.admissionNo || '';
+                            receiptData.studentName = student.fullName || receiptData.studentName || '';
+                          }
+                        }
+                        setReceiptToDownload(receiptData);
+                        setTimeout(() => {
+                          downloadElementAsPDF('parent-receipt-preview', `${receiptData.receiptNo || receiptData.id}.pdf`).then(() => setReceiptToDownload(null));
+                        }, 100);
+                      }} 
+                      className="text-primary hover:bg-primary/10 p-2 rounded-xl transition-colors shrink-0" title="Download Receipt">
+                      <FileDown className="h-5 w-5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       }
+
+      {/* HIDDEN RECEIPT TEMPLATE FOR DOWNLOADING */}
+      {receiptToDownload && (
+        <div className="absolute left-[-9999px] top-[-9999px]">
+          <div id="parent-receipt-preview" className="bg-white text-slate-900 p-6 w-[400px]">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="h-10 w-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center">
+                  <Receipt className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="font-display font-black text-lg tracking-tight">St. Paul's High School</div>
+                  <div className="text-[10px] text-slate-500">Fee Receipt</div>
+                </div>
+              </div>
+              <div className="text-right text-[10px]">
+                <div className="font-mono font-bold">{receiptToDownload.receiptNo || '—'}</div>
+                <div className="text-slate-500">{new Date(receiptToDownload.paymentDate || receiptToDownload.paidAt?.toDate() || Date.now()).toLocaleDateString('en-IN')}</div>
+              </div>
+            </div>
+            <div className="mt-4 space-y-1.5 text-xs">
+              <div className="flex justify-between"><span className="text-slate-500">Student</span><span className="font-bold">{receiptToDownload.studentName || activeChild?.name || profile?.linkedStudentName || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Father's Name</span><span className="font-bold">{receiptToDownload.fatherName || activeChild?.fatherName || profile?.fatherName || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Admission No.</span><span className="font-mono font-bold">{receiptToDownload.admissionNo || activeChild?.admissionNo || profile?.linkedStudentAdmissionNo || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Class</span><span className="font-bold">{receiptToDownload.className || activeChild?.className || profile?.linkedStudentClass || '—'} {receiptToDownload.section || activeChild?.section || profile?.linkedStudentSection ? ` - ${receiptToDownload.section || activeChild?.section || profile?.linkedStudentSection}` : ''}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Category</span><span className="font-bold">{receiptToDownload.feeName || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Mode</span><span className="font-bold">{receiptToDownload.paymentMode || receiptToDownload.paymentMethod || 'Online'}</span></div>
+            </div>
+            {receiptToDownload.termAllocations && receiptToDownload.termAllocations.length > 0 && (
+              <div className="mt-3 pt-2 border-t border-slate-100 space-y-1">
+                {receiptToDownload.termAllocations.map((a, i) => (
+                  <div key={i} className="flex justify-between text-[10px]">
+                    <span className="text-slate-500">{a.termName}</span>
+                    <span className="font-bold">₹{Number(a.amount).toLocaleString('en-IN')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="mt-4 p-3 rounded-xl bg-indigo-50 flex items-center justify-between">
+              <span className="text-xs text-slate-500">Amount Paid</span>
+              <span className="font-display font-black text-2xl tracking-tighter text-indigo-700">₹{(receiptToDownload.amount || 0).toLocaleString('en-IN')}</span>
+            </div>
+            <div className="mt-6 flex items-end justify-between text-[10px] text-slate-500">
+              <span>Online Payment Gateway</span>
+              <span>System Generated</span>
+            </div>
+          </div>
+        </div>
+      )}
     </SimplePage>
   );
 };
@@ -304,12 +588,32 @@ const Attendance = () => {
     Promise.all([
       getStudentAttendanceSummary(studentId),
       listAttendance({ className }),
-    ]).then(([sum, atList]) => {
+      listHolidays()
+    ]).then(([sum, atList, hols]) => {
       setSummary(sum);
-      const rows = atList.map(doc => ({
+      let rows = atList.map(doc => ({
         date: doc.date, status: (doc.records || {})[studentId],
         className: doc.className, section: doc.section,
-      })).filter(r => r.status).sort((a, b) => b.date.localeCompare(a.date));
+      })).filter(r => r.status);
+      
+      // Inject holidays into the records
+      const holMap = {};
+      hols.forEach(h => { holMap[h.date] = h; });
+      
+      rows.forEach(r => {
+        if (holMap[r.date]) {
+          r.status = 'HOLIDAY';
+          r.name = holMap[r.date].name;
+          delete holMap[r.date];
+        }
+      });
+      
+      // Add remaining holidays that didn't have any attendance record at all
+      Object.values(holMap).forEach(h => {
+        rows.push({ date: h.date, status: 'HOLIDAY', name: h.name });
+      });
+
+      rows.sort((a, b) => b.date.localeCompare(a.date));
       setRecords(rows);
       setLoading(false);
     });
@@ -317,6 +621,7 @@ const Attendance = () => {
 
   const colorOf = (s) => s === 'PRESENT' ? 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30'
     : s === 'ABSENT' ? 'bg-rose-500/15 text-rose-600 border-rose-500/30'
+    : s === 'HOLIDAY' ? 'bg-indigo-500/15 text-indigo-600 border-indigo-500/30'
     : 'bg-amber-500/15 text-amber-600 border-amber-500/30';
 
   return (
@@ -352,7 +657,11 @@ const Attendance = () => {
             {records.slice(0, 30).map((r, i) => (
               <div key={i} className={`flex items-center justify-between p-3 rounded-2xl border ${colorOf(r.status)}`}>
                 <span className="text-sm font-bold">{r.date}</span>
-                <span className="label-eyebrow font-black">{r.status}</span>
+                {r.status === 'HOLIDAY' ? (
+                  <span className="label-eyebrow font-black">{r.name} (HOLIDAY)</span>
+                ) : (
+                  <span className="label-eyebrow font-black">{r.status}</span>
+                )}
               </div>
             ))}
             {records.length === 0 && <p className="text-center text-muted-foreground py-4 text-sm">No attendance records found yet</p>}
@@ -429,6 +738,7 @@ const ParentDiaryPage = () => {
 // ─── CRM — raise/track tickets ────────────────────────────────────────────────
 const Support = () => {
   const { profile } = useAuth();
+  const { activeChild } = useParentChild();
   const [tickets, setTickets] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', priority: 'MEDIUM', category: 'General' });
@@ -440,18 +750,18 @@ const Support = () => {
       const myPhone = (profile?.phone || '').replace(/\D/g, '').slice(-10);
       setTickets(all.filter(t => {
         const tPhone = (t.raisedBy || '').replace(/\D/g, '').slice(-10);
-        return tPhone === myPhone || t.parentName === profile?.fullName || t.studentName === profile?.linkedStudentName;
+        return tPhone === myPhone || t.parentName === profile?.fullName || t.studentName === profile?.linkedStudentName || t.studentId === activeChild?.id;
       }));
       setLoading(false);
     });
-  }, [profile]);
+  }, [profile, activeChild]);
 
   const handleSubmit = async () => {
     if (!form.title || !form.description) return toast.error('Fill in title and description');
-    setSaving(true);
+    if (saving) return; setSaving(true);
     const ticket = await addTicket({
       ...form, raisedBy: profile?.phone, parentName: profile?.fullName,
-      studentName: profile?.linkedStudentName, studentId: profile?.linkedStudentId,
+      studentName: activeChild?.name || profile?.linkedStudentName, studentId: activeChild?.id || profile?.linkedStudentId,
       createdByName: profile?.fullName,
     });
     if (ticket) {
@@ -711,19 +1021,6 @@ function ParentHome() {
           </div>
         </div>
 
-        {/* Multi-child switcher — shown in home too for visual context */}
-        {linkedStudents.length > 1 && (
-          <div className="flex gap-2 flex-wrap">
-            <span className="label-eyebrow text-muted-foreground self-center">Viewing:</span>
-            {linkedStudents.map((c, i) => (
-              <button key={c.id} onClick={() => { setChildIdx(i); setLoading(true); }}
-                className={`px-4 py-2 rounded-2xl label-eyebrow text-xs border transition-all ${childIdx === i ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted border-border text-muted-foreground'}`}>
-                {c.name} · Class {c.className}{c.section ? `-${c.section}` : ''}
-              </button>
-            ))}
-          </div>
-        )}
-
         {loading ? (
           <div className="text-center py-8 text-muted-foreground">Loading your child's data…</div>
         ) : (
@@ -762,25 +1059,6 @@ function ParentHome() {
                 </div>
               </div>
             </div>
-
-            {/* Module grid */}
-            <div>
-              <div className="label-eyebrow text-muted-foreground mb-3">Quick Access</div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {MODULES.map((m, i) => (
-                  <motion.button key={m.key} data-testid={`parent-module-${m.key}`} onClick={() => navigate(m.key)}
-                    initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-                    whileHover={{ y: -5, scale: 1.03 }} whileTap={{ scale: 0.98 }}
-                    className="glass-morphism rounded-[1.75rem] p-4 text-left flex flex-col gap-3">
-                    <div className={`h-11 w-11 rounded-2xl ${m.tint} grid place-items-center`}><m.icon className="h-5 w-5" /></div>
-                    <div>
-                      <div className="font-bold text-sm leading-tight">{m.label}</div>
-                      <div className="label-eyebrow text-muted-foreground mt-1">Open →</div>
-                    </div>
-                  </motion.button>
-                ))}
-              </div>
-            </div>
           </>
         )}
       </div>
@@ -816,21 +1094,41 @@ export default function ParentDashboard() {
 
   return (
     <ParentChildContext.Provider value={{ activeChild, linkedStudents, childIdx, setChildIdx }}>
-      <Routes>
-        <Route index element={<ParentHome />} />
-        <Route path="announcements" element={<Announcements />} />
-        <Route path="result"        element={<Result />} />
-        <Route path="attendance"    element={<Attendance />} />
-        <Route path="finance"       element={<Finance />} />
-        <Route path="support"       element={<Support />} />
-        <Route path="messages"      element={<Messages />} />
-        <Route path="diary"         element={<ParentDiaryPage />} />
-        <Route path="exam-timetable" element={<ExamTimetable />} />
-        <Route path="messaging"     element={<TeacherMessaging />} />
-        <Route path="gps"           element={<GPSTracking />} />
-        <Route path="online-exams"  element={<OnlineExams />} />
-        <Route path="gallery"       element={<EventGallery />} />
-      </Routes>
+      <div className="flex flex-col h-full space-y-4">
+        {/* GLOBAL MULTI-CHILD SWITCHER */}
+        {linkedStudents.length > 1 && (
+          <div className="flex items-center gap-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl sticky top-4 z-40 backdrop-blur-md">
+            <span className="label-eyebrow text-indigo-700 dark:text-indigo-300 ml-2">Viewing Child:</span>
+            <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
+              {linkedStudents.map((c, i) => (
+                <button key={c.id} onClick={() => setChildIdx(i)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all whitespace-nowrap ${childIdx === i ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/20' : 'bg-card border-border text-muted-foreground hover:bg-muted'}`}>
+                  <span className="font-bold text-sm">{c.name?.split(' ')[0] || 'Child'}</span>
+                  <span className="label-eyebrow text-[10px] opacity-70">({c.className}{c.section ? `-${c.section}` : ''})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1">
+          <Routes>
+            <Route index element={<ParentHome />} />
+            <Route path="announcements" element={<Announcements />} />
+            <Route path="result"        element={<Result />} />
+            <Route path="attendance"    element={<Attendance />} />
+            <Route path="finance"       element={<Finance />} />
+            <Route path="support"       element={<Support />} />
+            <Route path="messages"      element={<Messages />} />
+            <Route path="diary"         element={<ParentDiaryPage />} />
+            <Route path="exam-timetable" element={<ExamTimetable />} />
+            <Route path="messaging"     element={<TeacherMessaging />} />
+            <Route path="gps"           element={<GPSTracking />} />
+            <Route path="online-exams"  element={<OnlineExams />} />
+            <Route path="gallery"       element={<EventGallery />} />
+          </Routes>
+        </div>
+      </div>
     </ParentChildContext.Provider>
   );
 }

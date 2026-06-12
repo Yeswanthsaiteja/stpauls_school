@@ -76,7 +76,20 @@ export default function ResultsEntry() {
   const classOpts = classes.map(c => c.name);
   const filteredSubjects = subjects.filter(s => s.className === className);
   const subject = subjects.find((s) => s.id === subjectId);
+  const examConfig = activeExam?.schedule?.[className]?.find(s => s.subjectName === subject?.name);
+  const dynamicTotalMarks = examConfig?.totalMarks || 100;
+
+  const dynamicCalcGrade = (num, config) => {
+    if (!config || config.isGradeOnly) return '—';
+    const scale = config.gradingScale || [];
+    for (const r of scale) {
+      if (num >= r.min && num <= r.max) return r.grade;
+    }
+    return '—';
+  };
+
   const summary = useMemo(() => {
+    if (examConfig?.isGradeOnly) return { avg: '—', top: '—', low: '—' };
     const entries = Object.values(marks).map(Number).filter((x) => !isNaN(x));
     if (!entries.length) return { avg: 0, top: 0, low: 0 };
     return {
@@ -84,7 +97,7 @@ export default function ResultsEntry() {
       top: Math.max(...entries),
       low: Math.min(...entries),
     };
-  }, [marks]);
+  }, [marks, examConfig]);
 
   const saveAll = async () => {
     if (!className) return toast.error('Select a class');
@@ -93,13 +106,24 @@ export default function ResultsEntry() {
     
     const entries = Object.entries(marks).filter(([, v]) => v !== '' && v !== undefined);
     if (!entries.length) return toast.error('Enter at least one mark');
-    setSaving(true);
-    const payload = entries.map(([studentId, m]) => {
-      const num = Number(m);
-      const grade = calcGrade(num, totalMarks);
+    let hasError = false;
+    const payload = [];
+    for (const [studentId, m] of entries) {
       const student = students.find((s) => s.id === studentId);
-      return { studentId, studentName: student?.fullName, subjectId, subject: subject?.name, examType: activeExamName, marks: num, totalMarks, grade, className, section };
-    });
+      const isGradeOnly = examConfig?.isGradeOnly;
+      const num = isGradeOnly ? null : Number(m);
+      if (!isGradeOnly && num > dynamicTotalMarks) {
+        toast.error(`Marks cannot exceed ${dynamicTotalMarks} for ${student?.fullName}`);
+        hasError = true;
+        break;
+      }
+      const grade = isGradeOnly ? m : dynamicCalcGrade(num, examConfig);
+      payload.push({ studentId, studentName: student?.fullName, subjectId, subject: subject?.name, examType: activeExamName, marks: num, totalMarks: dynamicTotalMarks, grade, className, section });
+    }
+    
+    if (hasError) return;
+    
+    if (saving) return; setSaving(true);
     await bulkSaveResults(payload);
     toast.success(`Saved ${payload.length} results to Firestore`);
     setSaving(false);
@@ -107,7 +131,7 @@ export default function ResultsEntry() {
 
   return (
     <div className="space-y-6" data-testid="results-entry">
-      <NavLink to=".." className="label-eyebrow text-primary">← Back to Academic</NavLink>
+      <NavLink to="/dashboard/academic" className="label-eyebrow text-primary">← Back to Academic</NavLink>
       <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Results Entry</h1>
 
       <div className="glass-morphism rounded-[2rem] p-5 grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -149,8 +173,10 @@ export default function ResultsEntry() {
           </select>
         </div>
         <div>
-          <label className="label-eyebrow text-muted-foreground">Total Marks</label>
-          <input type="number" value={totalMarks} onChange={(e) => setTotalMarks(Number(e.target.value) || 100)} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm" data-testid="results-total" />
+          <label className="label-eyebrow text-muted-foreground">Total Marks / Mode</label>
+          <div className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm flex items-center text-muted-foreground">
+            {examConfig?.isGradeOnly ? 'Grade Only' : dynamicTotalMarks}
+          </div>
         </div>
       </div>
 
@@ -178,16 +204,24 @@ export default function ResultsEntry() {
               )}
               {rows.map((s) => {
                 const m = marks[s.id] || '';
-                const grade = m !== '' ? calcGrade(Number(m), totalMarks) : '—';
+                const isGradeOnly = examConfig?.isGradeOnly;
+                const grade = isGradeOnly ? m : (m !== '' ? dynamicCalcGrade(Number(m), examConfig) : '—');
                 return (
                   <motion.tr key={s.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border-t border-border hover:bg-muted/30">
                     <td className="p-2 font-mono text-xs font-bold">{s.admissionNo}</td>
                     <td className="p-2 font-bold text-sm">{s.fullName}</td>
                     <td className="p-2 text-sm">{s.rollNo}</td>
                     <td className="p-2">
-                      <input type="number" min={0} max={totalMarks} value={m} onChange={(e) => setMarks((mm) => ({ ...mm, [s.id]: e.target.value }))} className="w-24 h-9 px-3 rounded-xl border border-border bg-card text-sm" data-testid={`mark-${s.id}`} />
+                      {isGradeOnly ? (
+                        <select value={m} onChange={(e) => setMarks((mm) => ({ ...mm, [s.id]: e.target.value }))} className="w-24 h-9 px-3 rounded-xl border border-border bg-card text-sm">
+                          <option value="">-</option>
+                          {(examConfig.gradeOptions || []).map(g => <option key={g} value={g}>{g}</option>)}
+                        </select>
+                      ) : (
+                        <input type="number" min={0} max={dynamicTotalMarks} value={m} onChange={(e) => setMarks((mm) => ({ ...mm, [s.id]: e.target.value }))} className="w-24 h-9 px-3 rounded-xl border border-border bg-card text-sm" data-testid={`mark-${s.id}`} />
+                      )}
                     </td>
-                    <td className="p-2"><span className={`px-2.5 py-1 rounded-full label-eyebrow ${grade === '—' ? 'bg-muted text-muted-foreground' : grade === 'F' ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>{grade}</span></td>
+                    <td className="p-2"><span className={`px-2.5 py-1 rounded-full label-eyebrow ${grade === '—' || grade === '' ? 'bg-muted text-muted-foreground' : grade === 'F' ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>{grade || '—'}</span></td>
                   </motion.tr>
                 );
               })}

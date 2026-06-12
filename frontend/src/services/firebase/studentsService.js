@@ -40,7 +40,18 @@ export async function getStudent(id) {
 
 export async function addStudent(data) {
   if (!isFirebaseConfigured || !db) throw new Error('Firebase not configured');
-  const admissionNo = data.admissionNo || `STP${Date.now().toString().slice(-6)}`;
+  let admissionNo = data.admissionNo;
+  if (!admissionNo) {
+    const list = await fetchAll();
+    let max = 0;
+    for (const s of list) {
+      if (s.admissionNo && s.admissionNo.toLowerCase().startsWith('stpstd')) {
+        const num = parseInt(s.admissionNo.toLowerCase().replace('stpstd', ''), 10);
+        if (!isNaN(num) && num > max) max = num;
+      }
+    }
+    admissionNo = `STPSTD${String(max + 1).padStart(5, '0')}`;
+  }
   const payload = {
     ...data,
     admissionNo,
@@ -57,7 +68,9 @@ export async function addStudent(data) {
 
 export async function updateStudent(id, patch) {
   if (!isFirebaseConfigured || !db) return;
-  await safe(() => updateDoc(doc(db, COL, id), { ...patch, updatedAt: serverTimestamp() }));
+  // These fields are set at admission time and must never be overwritten
+  const { admissionYear, admissionClass, admissionNo, tenantId, createdAt, ...safePatch } = patch;
+  await safe(() => updateDoc(doc(db, COL, id), { ...safePatch, updatedAt: serverTimestamp() }));
 }
 
 export async function removeStudent(id, reason = '') {

@@ -5,6 +5,7 @@ import { addStudent, getStudent, updateStudent } from '../../services/firebase/s
 import { listClasses } from '../../services/firebase/academicService';
 import { listRoutes, addAllocation as addTransportAllocation } from '../../services/firebase/transportService';
 import { listRooms, allocateRoom } from '../../services/firebase/hostelService';
+import { logActivity } from '../../services/firebase/activityService';
 import { toast } from 'sonner';
 
 // ─── STEPS ────────────────────────────────────────────────────────────────────
@@ -51,6 +52,7 @@ const Sel = memo(function Sel({ label, name, options, required, value, onChange 
     <div>
       <label className={labelCls}>{label}{required && <span className="text-rose-500 ml-0.5">*</span>}</label>
       <select name={name} value={value} onChange={onChange} required={required} className={selectCls} data-testid={`adm-${name}`}>
+        <option value="" disabled>Select...</option>
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     </div>
@@ -61,7 +63,7 @@ const Sel = memo(function Sel({ label, name, options, required, value, onChange 
 const INIT = {
   // personal
   firstName: '', lastName: '', dateOfBirth: '', gender: 'Male', bloodGroup: '', aadharNumber: '',
-  nationality: 'Indian', religion: '', category: 'General', motherTongue: '', photoURL: '',
+  nationality: 'Indian', religion: '', category: 'General', subCaste: '', motherTongue: '', photoURL: '',
   // contact
   address: '', currentAddress: '', sameAsPermanent: true, city: '', state: '', pinCode: '',
   phoneNumber: '', email: '',
@@ -71,7 +73,8 @@ const INIT = {
   guardianName: '', guardianRelation: '', guardianPhone: '', annualIncome: '',
   // admission
   admissionDate: new Date().toISOString().slice(0, 10),
-  className: '5th', section: 'A', academicYear: '2025-26',
+  admissionNo: '', admissionYear: '', admissionClass: '',
+  className: '', section: '', academicYear: '2025-26',
   admissionType: 'New', previousSchool: '', lastGradePassed: '', tcNumber: '',
   mediumOfInstruction: 'English', house: 'Red', siblings: '',
   // health
@@ -133,14 +136,18 @@ export default function AdmissionFormFull() {
     // Full validation on final submit
     if (!data.firstName.trim() || !data.lastName.trim()) { setStep(0); return toast.error('First and last name are required'); }
     if (!data.dateOfBirth)   { setStep(0); return toast.error('Date of birth is required'); }
+    if (!data.gender)        { setStep(0); return toast.error('Gender is required'); }
+    if (!data.aadharNumber)  { setStep(0); return toast.error('Aadhar Number is required'); }
+    if (!data.category)      { setStep(0); return toast.error('Category is required'); }
     if (!data.phoneNumber)   { setStep(1); return toast.error('Phone number is required'); }
-    if (!data.address.trim()) { setStep(1); return toast.error('Permanent address is required'); }
-    if (!data.city.trim())   { setStep(1); return toast.error('City is required'); }
     if (!data.fatherName.trim()) { setStep(2); return toast.error("Father's name is required"); }
-    if (!data.fatherPhone)   { setStep(2); return toast.error("Father's phone is required"); }
     if (!data.motherName.trim()) { setStep(2); return toast.error("Mother's name is required"); }
-    if (!data.className)     { setStep(3); return toast.error('Class is required'); }
-    if (!data.admissionDate) { setStep(3); return toast.error('Admission date is required'); }
+    if (!data.admissionYear) { setStep(3); return toast.error('Admission Year is required'); }
+    if (!data.admissionClass){ setStep(3); return toast.error('Admission Class is required'); }
+    if (!data.className)     { setStep(3); return toast.error('Current Class is required'); }
+    if (!data.section)       { setStep(3); return toast.error('Section is required'); }
+    if (saving) return;
+    setSaving(true);
     try {
       const payload = {
         ...data,
@@ -155,6 +162,12 @@ export default function AdmissionFormFull() {
         const student = await addStudent(payload);
         studentId = student?.id;
         toast.success(`Admission created: ${student?.admissionNo}`);
+        
+        // Log system activity & alert admin
+        await logActivity({
+          type: 'admission',
+          text: `New admission · ${payload.fullName} joined Class ${payload.className}-${payload.section}`,
+        });
       }
 
       // Auto-create transport allocation if bus is selected
@@ -195,29 +208,24 @@ export default function AdmissionFormFull() {
   // Per-step validation — called when clicking Next
   const validateAndNext = useCallback(() => {
     if (step === 0) { // Personal
-      if (!data.firstName.trim()) return toast.error('First name is required');
-      if (!data.lastName.trim())  return toast.error('Last name is required');
+      if (!data.firstName.trim() || !data.lastName.trim()) return toast.error('First and last name are required');
       if (!data.dateOfBirth)      return toast.error('Date of birth is required');
+      if (!data.gender)           return toast.error('Gender is required');
+      if (!data.aadharNumber)     return toast.error('Aadhar Number is required');
+      if (!data.category)         return toast.error('Category is required');
     }
     if (step === 1) { // Contact
-      if (!data.address.trim())   return toast.error('Permanent address is required');
-      if (!data.city.trim())      return toast.error('City is required');
-      if (!data.state.trim())     return toast.error('State is required');
       if (!data.phoneNumber)      return toast.error('Phone number is required');
     }
     if (step === 2) { // Parent
       if (!data.fatherName.trim()) return toast.error("Father's name is required");
-      if (!data.fatherPhone)       return toast.error("Father's phone number is required");
       if (!data.motherName.trim()) return toast.error("Mother's name is required");
     }
     if (step === 3) { // Admission
-      if (!data.admissionDate)     return toast.error('Admission date is required');
-      if (!data.className)         return toast.error('Class is required');
-      if (!data.academicYear)      return toast.error('Academic year is required');
-    }
-    if (step === 5) { // Transport/Hostel
-      if (data.usesBus && !data.busRouteId) return toast.error('Select a bus route');
-      if (data.inHostel && !data.hostelRoomId) return toast.error('Select a hostel room');
+      if (!data.admissionYear)     return toast.error('Admission Year is required');
+      if (!data.admissionClass)    return toast.error('Admission Class is required');
+      if (!data.className)         return toast.error('Current Class is required');
+      if (!data.section)           return toast.error('Section is required');
     }
     setStep(s => s + 1);
   }, [step, data]);
@@ -226,7 +234,7 @@ export default function AdmissionFormFull() {
 
   return (
     <div className="space-y-6 max-w-5xl" data-testid="admission-form-full">
-      <NavLink to=".." className="label-eyebrow text-primary">← Back to Students</NavLink>
+      <NavLink to="/dashboard/students" className="label-eyebrow text-primary">← Back to Students</NavLink>
       <h1 className="font-display font-black text-3xl tracking-tighter uppercase">{id ? 'Edit Student Details' : 'New Admission Form'}</h1>
       <p className="text-sm text-muted-foreground -mt-3">Fields marked <span className="text-rose-500 font-bold">*</span> are required</p>
 
@@ -251,10 +259,11 @@ export default function AdmissionFormFull() {
             <Field label="Date of Birth"  name="dateOfBirth" required value={data.dateOfBirth} onChange={handleChange} type="date" />
             <Sel   label="Gender"         name="gender"      required value={data.gender}      onChange={handleChange} options={['Male','Female','Other']} />
             <Sel   label="Blood Group"    name="bloodGroup"           value={data.bloodGroup}   onChange={handleChange} options={['','A+','A-','B+','B-','O+','O-','AB+','AB-']} />
-            <Field label="Aadhar Number"  name="aadharNumber"         value={data.aadharNumber} onChange={handleChange} placeholder="XXXX-XXXX-XXXX" />
+            <Field label="Aadhar Number"  name="aadharNumber" required value={data.aadharNumber} onChange={handleChange} placeholder="XXXX-XXXX-XXXX" />
             <Field label="Nationality"    name="nationality"          value={data.nationality}  onChange={handleChange} />
             <Field label="Religion"       name="religion"             value={data.religion}     onChange={handleChange} />
-            <Sel   label="Category"       name="category"    required value={data.category}    onChange={handleChange} options={['General','OBC','SC','ST','EWS']} />
+            <Sel   label="Category (Caste)" name="category"  required value={data.category}    onChange={handleChange} options={['General','OBC','BC-A','BC-B','BC-C','BC-D','BC-E','SC','ST','EWS']} />
+            <Field label="Sub-Caste"      name="subCaste"             value={data.subCaste}     onChange={handleChange} placeholder="e.g. Relli, Kamma" />
             <Field label="Mother Tongue"  name="motherTongue"         value={data.motherTongue} onChange={handleChange} />
             <div className="col-span-full">
               <label className={labelCls}>Student Photo</label>
@@ -272,7 +281,7 @@ export default function AdmissionFormFull() {
         {/* ── STEP 2: Contact ── */}
         {cur.k === 'contact' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Permanent Address" name="address"     required full value={data.address}     onChange={handleChange} placeholder="House No, Street, Area" />
+            <Field label="Permanent Address" name="address"     full value={data.address}     onChange={handleChange} placeholder="House No, Street, Area" />
             <label className="col-span-full flex items-center gap-2 text-sm font-medium cursor-pointer">
               <input type="checkbox" name="sameAsPermanent" checked={data.sameAsPermanent} onChange={handleChange} className="accent-indigo-500 h-4 w-4" data-testid="adm-sameAddress" />
               Current address is same as permanent
@@ -280,9 +289,9 @@ export default function AdmissionFormFull() {
             {!data.sameAsPermanent && (
               <Field label="Current Address" name="currentAddress" full value={data.currentAddress} onChange={handleChange} placeholder="Current address if different" />
             )}
-            <Field label="City"             name="city"         required value={data.city}         onChange={handleChange} />
-            <Field label="State"            name="state"        required value={data.state}        onChange={handleChange} />
-            <Field label="PIN Code"         name="pinCode"      required value={data.pinCode}      onChange={handleChange} placeholder="500001" />
+            <Field label="City"             name="city"         value={data.city}         onChange={handleChange} />
+            <Field label="State"            name="state"        value={data.state}        onChange={handleChange} />
+            <Field label="PIN Code"         name="pinCode"      value={data.pinCode}      onChange={handleChange} placeholder="500001" />
             <Field label="Phone Number"     name="phoneNumber"  required value={data.phoneNumber}  onChange={handleChange} placeholder="+91 9876543210" />
             <Field label="Email"            name="email"                 value={data.email}        onChange={handleChange} type="email" placeholder="student@email.com" />
           </div>
@@ -296,7 +305,7 @@ export default function AdmissionFormFull() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <Field label="Father's Full Name"  name="fatherName"       required value={data.fatherName}       onChange={handleChange} />
                 <Field label="Occupation"           name="fatherOccupation"          value={data.fatherOccupation} onChange={handleChange} />
-                <Field label="Phone"                name="fatherPhone"      required value={data.fatherPhone}      onChange={handleChange} placeholder="+91…" />
+                <Field label="Phone"                name="fatherPhone"               value={data.fatherPhone}      onChange={handleChange} placeholder="+91…" />
                 <Field label="Email"                name="fatherEmail"               value={data.fatherEmail}      onChange={handleChange} type="email" />
                 <Field label="Aadhar Number"        name="fatherAadhar"              value={data.fatherAadhar}     onChange={handleChange} placeholder="XXXX-XXXX-XXXX" />
                 <Field label="Annual Income (₹)"   name="fatherIncome"              value={data.fatherIncome}     onChange={handleChange} type="number" placeholder="500000" />
@@ -328,17 +337,27 @@ export default function AdmissionFormFull() {
         {/* ── STEP 4: Admission Details ── */}
         {cur.k === 'admission' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Field label="Admission Date"       name="admissionDate"       required value={data.admissionDate}       onChange={handleChange} type="date" />
-            <Sel   label="Class"                name="className"           required value={data.className}           onChange={handleChange} options={classOpts} />
+            {data.admissionNo && (
+              <div>
+                <label className={labelCls}>Admission Number</label>
+                <div className="mt-1.5 w-full h-11 px-4 rounded-2xl border border-border bg-muted/40 text-sm flex items-center font-mono text-muted-foreground select-all">
+                  {data.admissionNo}
+                </div>
+              </div>
+            )}
+            <Field label="Admission Year"       name="admissionYear"       required value={data.admissionYear}       onChange={handleChange} placeholder="2025" />
+            <Sel   label="Admission Class"      name="admissionClass"      required value={data.admissionClass}      onChange={handleChange} options={classOpts} />
+            <Sel   label="Current Class"        name="className"           required value={data.className}           onChange={handleChange} options={classOpts} />
             <Sel   label="Section"              name="section"             required value={data.section}             onChange={handleChange} options={sectionOpts} />
-            <Field label="Academic Year"        name="academicYear"        required value={data.academicYear}        onChange={handleChange} placeholder="2025-26" />
-            <Sel   label="Admission Type"       name="admissionType"       required value={data.admissionType}       onChange={handleChange} options={['New','Transfer','Rejoining']} />
-            <Field label="Previous School"      name="previousSchool"               value={data.previousSchool}      onChange={handleChange} />
-            <Field label="Last Class Passed"    name="lastGradePassed"              value={data.lastGradePassed}     onChange={handleChange} placeholder="e.g. 9th Standard" />
-            <Field label="TC Number (Transfer)" name="tcNumber"                     value={data.tcNumber}            onChange={handleChange} />
-            <Sel   label="Medium of Instruction" name="mediumOfInstruction" required value={data.mediumOfInstruction} onChange={handleChange} options={['English','Hindi','Telugu','Urdu','Regional']} />
-            <Sel   label="House"                name="house"                        value={data.house}               onChange={handleChange} options={['Red','Blue','Green','Yellow']} />
-            <Field label="Sibling Admission No." name="siblings"                    value={data.siblings}            onChange={handleChange} placeholder="ADM20253142 (if any)" />
+            <Field label="Academic Year"        name="academicYear"        value={data.academicYear}                 onChange={handleChange} placeholder="2025-26" />
+            <Sel   label="Admission Type"       name="admissionType"       value={data.admissionType}                onChange={handleChange} options={['New','Transfer','Rejoining']} />
+            <Field label="Previous School"      name="previousSchool"      value={data.previousSchool}               onChange={handleChange} />
+            <Field label="Last Class Passed"    name="lastGradePassed"     value={data.lastGradePassed}              onChange={handleChange} placeholder="e.g. 9th Standard" />
+            <Field label="TC Number (Transfer)" name="tcNumber"            value={data.tcNumber}                     onChange={handleChange} />
+            <Sel   label="Medium of Instruction" name="mediumOfInstruction" value={data.mediumOfInstruction}         onChange={handleChange} options={['English','Hindi','Telugu','Urdu','Regional']} />
+            <Sel   label="House"                name="house"               value={data.house}                        onChange={handleChange} options={['Red','Blue','Green','Yellow']} />
+            <Field label="Sibling Admission No." name="siblings"           value={data.siblings}                     onChange={handleChange} placeholder="ADM20253142 (if any)" />
+            <Field label="Admission Date"       name="admissionDate"       value={data.admissionDate}                onChange={handleChange} type="date" />
           </div>
         )}
 

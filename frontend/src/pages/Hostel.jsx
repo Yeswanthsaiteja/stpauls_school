@@ -30,7 +30,7 @@ export default function Hostel() {
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.number) return toast.error('Room number is required');
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try {
       const row = await addRoom({ ...form, capacity: Number(form.capacity), floor: Number(form.floor) });
       if (row) {

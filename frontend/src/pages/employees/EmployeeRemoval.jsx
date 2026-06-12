@@ -36,7 +36,7 @@ export default function EmployeeRemoval() {
 
   const confirm = async () => {
     if (!picked) return;
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try {
       await removeEmployee(picked.id, form.reason, {
         leavingDate: form.leavingDate,

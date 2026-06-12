@@ -8,6 +8,7 @@ import './i18n/config';
 import { OfflineBanner, usePushNotifications, isNative } from './hooks/useNative';
 
 import LoginPage from './pages/LoginPage';
+import AppLockScreen from './components/AppLockScreen';
 import DashboardLayout from './components/DashboardLayout';
 import AdminDashboard from './pages/Dashboard';
 import StaffDashboard from './pages/StaffDashboard';
@@ -22,6 +23,7 @@ import CRMPanel from './pages/CRMPanel';
 import AccountSettings from './pages/AccountSettings';
 import BulkImport from './pages/BulkImport';
 import ResultsEntry from './pages/ResultsEntry';
+import LibraryModule from './pages/library/LibraryModule';
 import StudentAttendance from './pages/StudentAttendance';
 import IDCardStudio from './pages/IDCardStudio';
 import Transport from './pages/Transport';
@@ -29,7 +31,9 @@ import Hostel from './pages/Hostel';
 import RazorpaySettings from './pages/RazorpaySettings';
 import Timetable from './pages/Timetable';
 import RfidAttendance from './pages/RfidAttendance';
+import AttendanceStatus from './pages/AttendanceStatus';
 import LeaveManagement from './pages/LeaveManagement';
+import HolidaysCalendar from './pages/HolidaysCalendar';
 import EmployeeAdd from './pages/EmployeeAdd';
 import EmployeeDirectoryPage from './pages/employees/EmployeeDirectoryPage';
 import EmployeeRemoval from './pages/employees/EmployeeRemoval';
@@ -45,6 +49,8 @@ import FeeCollection from './pages/finance/FeeCollection';
 import FeeSetup from './pages/finance/FeeSetup';
 import Ledger from './pages/finance/Ledger';
 import Payroll from './pages/finance/Payroll';
+import FeeDefaulters from './pages/finance/FeeDefaulters';
+import FeeStatus from './pages/finance/FeeStatus';
 import LessonPlanning from './pages/academic/LessonPlanning';
 import YearEndPromotion from './pages/academic/YearEndPromotion';
 import SubjectsTopicsCRUD from './pages/academic/SubjectsTopicsCRUD';
@@ -73,10 +79,11 @@ function ProtectedRoute() {
 function RoleHome() {
   const { profile } = useAuth();
   const role = profile?.role;
-  if (role === 'PARENT') return <Navigate to="/dashboard/parent-dashboard" replace />;
-  const staffRoles = ['staff', 'teacher', 'class teacher', 'principal', 'vice principal', 'accountant', 'librarian', 'lab assistant', 'administrative', 'support staff'];
-  if (role && staffRoles.includes(role.toLowerCase())) return <Navigate to="/dashboard/staff-dashboard" replace />;
-  return <AdminDashboard />;
+  if (!role) return <AdminDashboard />;
+  const r = role.toLowerCase().trim();
+  if (r === 'parent') return <Navigate to="/dashboard/parent-dashboard" replace />;
+  if (r === 'school_admin' || r === 'admin') return <AdminDashboard />;
+  return <Navigate to="/dashboard/staff-dashboard" replace />;
 }
 
 function Stub({ title }) {
@@ -104,6 +111,7 @@ function App() {
                   <Route path="finance" element={<FinanceModule />} />
                   <Route path="employees" element={<EmployeesModule />} />
                   <Route path="attendance" element={<AttendanceModule />} />
+                  <Route path="library/*" element={<LibraryModule />} />
                   <Route path="communication" element={<CommunicationCenter />} />
                   <Route path="crm" element={<CRMPanel />} />
                   <Route path="settings" element={<AccountSettings />} />
@@ -114,19 +122,21 @@ function App() {
                   <Route path="razorpay" element={<RazorpaySettings />} />
                   <Route path="results-entry" element={<ResultsEntry />} />
                   <Route path="student-attendance" element={<StudentAttendance />} />
+                  <Route path="attendance-status" element={<AttendanceStatus />} />
                   <Route path="rfid-attendance" element={<RfidAttendance />} />
                   <Route path="leave-management" element={<LeaveManagement />} />
+                  <Route path="holidays" element={<HolidaysCalendar />} />
                   <Route path="bulk-import" element={<BulkImport />} />
                   <Route path="timetable" element={<Timetable />} />
                   <Route path="employees/add" element={<EmployeeAdd />} />
                   <Route path="employees/directory" element={<EmployeeDirectoryPage />} />
                   <Route path="employees/removal" element={<EmployeeRemoval />} />
                   <Route path="employees/rejoin" element={<EmployeeRejoin />} />
-                  <Route path="academic/classes" element={<ClassesSections />} />
-                  <Route path="academic/exams" element={<ExamSetupPage />} />
                   <Route path="finance/setup" element={<FeeSetup />} />
                   <Route path="finance/collect/:studentId" element={<FeeCollection />} />
                   <Route path="finance/collect" element={<FeeCollection />} />
+                  <Route path="finance/defaulters" element={<FeeDefaulters />} />
+                  <Route path="finance/status" element={<FeeStatus />} />
                   <Route path="students/directory" element={<StudentDirectoryPage />} />
                   <Route path="students/profile/:id" element={<StudentProfile />} />
                   <Route path="students/admission-full" element={<AdmissionFormFull />} />
@@ -134,9 +144,6 @@ function App() {
                   <Route path="students/removal" element={<StudentRemoval />} />
                   <Route path="students/rejoin" element={<StudentRejoin />} />
                   <Route path="students/certificates" element={<Certificates />} />
-                  <Route path="academic/lesson-planning" element={<LessonPlanning />} />
-                  <Route path="academic/promotion" element={<YearEndPromotion />} />
-                  <Route path="academic/subjects" element={<SubjectsTopicsCRUD />} />
                   <Route path="finance/ledger" element={<Ledger />} />
                   <Route path="finance/payroll" element={<Payroll />} />
                   <Route path="diary" element={<Diary />} />

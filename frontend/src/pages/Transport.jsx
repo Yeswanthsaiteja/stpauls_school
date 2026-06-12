@@ -29,7 +29,7 @@ export default function Transport() {
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.code || !form.name) return toast.error('Route code and name are required');
-    setSaving(true);
+    if (saving) return; setSaving(true);
     try {
       const stopsArr = form.stops.split(',').map(s => s.trim()).filter(Boolean);
       const row = await addRoute({ ...form, stops: stopsArr, enrolled: 0, status: 'ACTIVE' });
