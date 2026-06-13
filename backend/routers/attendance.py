@@ -17,6 +17,14 @@ def fs():
     from firebase_admin import firestore
     return firestore.client()
 
+class SmartOfficeLog(BaseModel):
+    empName: str
+    punchTime: str
+
+class SmartOfficeSync(BaseModel):
+    logs: list[SmartOfficeLog]
+
+
 
 class AttendanceSave(BaseModel):
     className: str
@@ -112,6 +120,45 @@ async def save_attendance(payload: AttendanceSave, user=Depends(require_auth)):
     except Exception as e:
         logger.exception("Save attendance error: %s", e)
         raise HTTPException(status_code=500, detail="Failed to save attendance. Please try again.")
+
+# ─── Receive Smart Office Sync Data ───────────────────────────────────────────
+@router.post("/smart-office-sync")
+async def sync_smart_office(payload: SmartOfficeSync):
+    try:
+        from firebase_admin import firestore as fs_admin
+        db = fs()
+        
+        batch = db.batch()
+        count = 0
+        
+        for log in payload.logs:
+            # Create a unique ID using the timestamp and employee name to avoid duplicates
+            clean_time = log.punchTime.replace(" ", "T").replace(":", "-").replace(".", "-")
+            clean_name = log.empName.replace(" ", "_")
+            doc_id = f"sm_{clean_name}_{clean_time}"
+            
+            doc_ref = db.collection("biometric_logs").document(doc_id)
+            batch.set(doc_ref, {
+                "empName": log.empName,
+                "timestamp": log.punchTime,
+                "source": "SmartOffice_Sync",
+                "syncedAt": fs_admin.SERVER_TIMESTAMP
+            }, merge=True)
+            
+            count += 1
+            if count == 450: # Firestore batch limit is 500
+                batch.commit()
+                batch = db.batch()
+                count = 0
+                
+        if count > 0:
+            batch.commit()
+            
+        return {"success": True, "synced": len(payload.logs)}
+    except Exception as e:
+        logger.error(f"Error syncing smart office data: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to sync data")
+
 
 
 # ─── Class attendance summary (last 30 days) ──────────────────────────────────
