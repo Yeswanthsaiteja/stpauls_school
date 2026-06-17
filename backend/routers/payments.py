@@ -108,7 +108,6 @@ async def create_payment_link(payload: CreatePaymentLinkRequest, user=Depends(re
                 "studentId": payload.studentId,
                 "feeName": payload.feeName,
             },
-            "upi_link": True,  # Generate UPI-only link
         }
         link = client.payment_link.create(link_data)
         return CreatePaymentLinkResponse(
