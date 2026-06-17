@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { getCurrentAcademicYear } from '../utils';
+
 import { motion } from 'framer-motion';
 import { Printer, Download } from 'lucide-react';
 
@@ -11,8 +13,12 @@ export default function IDCards() {
   const [sel, setSel] = useState(students.slice(0, 4).map((s) => s.id));
   const [template, setTemplate] = useState('indigo');
 
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
+
   const toggle = (id) => setSel((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
-  const cards = students.filter((s) => sel.includes(s.id));
+  const filteredStudents = students.filter(s => (s.academicYear || '2026-27') === academicYear);
+  const cards = filteredStudents.filter((s) => sel.includes(s.id));
 
   const variants = {
     indigo: 'from-indigo-600 via-violet-600 to-fuchsia-600',
@@ -40,9 +46,17 @@ export default function IDCards() {
       </div>
 
       <div className="glass-morphism rounded-[2rem] p-5">
-        <div className="label-eyebrow text-muted-foreground mb-3">Select Students · {sel.length} selected</div>
+        <div className="flex flex-wrap items-center justify-between mb-3 gap-3">
+          <div className="label-eyebrow text-muted-foreground">Select Students · {sel.length} selected</div>
+          <div className="flex items-center gap-2">
+            <label className="label-eyebrow text-muted-foreground">Academic Year</label>
+            <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className="h-9 px-3 rounded-xl border border-border bg-card text-sm">
+              {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-          {students.map((s) => (
+          {filteredStudents.map((s) => (
             <label key={s.id} className={`p-3 rounded-2xl border cursor-pointer flex items-center gap-2 ${sel.includes(s.id) ? 'border-primary bg-primary/5' : 'border-border'}`}>
               <input type="checkbox" checked={sel.includes(s.id)} onChange={() => toggle(s.id)} className="accent-indigo-500" data-testid={`sel-${s.id}`} />
               <div className="text-sm font-bold truncate">{s.fullName}</div>
@@ -71,7 +85,7 @@ export default function IDCards() {
               </div>
             </div>
             <div className="relative mt-5 pt-4 border-t border-white/15 flex items-center justify-between">
-              <div className="label-eyebrow text-white/60">Valid 2025-26</div>
+              <div className="label-eyebrow text-white/60">Valid {s.academicYear || '2026-27'}</div>
               <div className="h-8 w-8 rounded bg-white/20 grid place-items-center text-[8px] font-black">QR</div>
             </div>
           </motion.div>

@@ -4,12 +4,14 @@ import { BookOpen, Users, UserSquare } from 'lucide-react';
 import AccessionRegister from './AccessionRegister';
 import StudentIssue from './StudentIssue';
 import StaffIssue from './StaffIssue';
+import RackArrangement from './RackArrangement';
 
 export default function LibraryModule() {
   const loc = useLocation();
 
   const tabs = [
     { name: 'Accession Register', path: 'accession', icon: BookOpen },
+    { name: 'Rack Arrangement', path: 'racks', icon: BookOpen },
     { name: 'Student Issue', path: 'student', icon: Users },
     { name: 'Staff Issue', path: 'staff', icon: UserSquare },
   ];
@@ -45,6 +47,7 @@ export default function LibraryModule() {
         <Routes>
           <Route path="/" element={<Navigate to="accession" replace />} />
           <Route path="accession" element={<AccessionRegister />} />
+          <Route path="racks" element={<RackArrangement />} />
           <Route path="student" element={<StudentIssue />} />
           <Route path="staff" element={<StaffIssue />} />
         </Routes>

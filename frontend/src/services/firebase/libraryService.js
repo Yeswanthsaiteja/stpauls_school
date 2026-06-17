@@ -17,6 +17,33 @@ async function fetchCol(name) {
     .filter((r) => !r.tenantId || r.tenantId === TENANT_ID);
 }
 
+// ─── Racks ─────────────────────────────────────────────────────────────────────
+export async function listRacks() {
+  if (!guard()) return [];
+  return safe(async () => {
+    const list = await fetchCol('library_racks');
+    return list.sort((a, b) => {
+      const numA = parseInt(a.rackNumber) || 0;
+      const numB = parseInt(b.rackNumber) || 0;
+      return numA - numB;
+    });
+  }, []);
+}
+
+export async function addRack(data) {
+  if (!guard()) return null;
+  const payload = { ...data, tenantId: TENANT_ID, createdAt: serverTimestamp() };
+  return safe(async () => {
+    const r = await addDoc(collection(db, 'library_racks'), payload);
+    return { id: r.id, ...payload };
+  }, null);
+}
+
+export async function deleteRack(id) {
+  if (!guard()) return;
+  await safe(() => deleteDoc(doc(db, 'library_racks', id)));
+}
+
 // ─── Books (Accession Register) ────────────────────────────────────────────────
 export async function listBooks() {
   if (!guard()) return [];
@@ -92,10 +119,11 @@ export async function issueBook(bookId, data) {
     const payload = { ...data, tenantId: TENANT_ID, createdAt: serverTimestamp() };
     const r = await addDoc(collection(db, 'library_issues'), payload);
     
-    // Update book status
+    // Update book status and remove from rack since it's issued
     await updateDoc(doc(db, 'library_books', bookId), {
       status: 'ISSUED',
       currentIssueId: r.id,
+      rackId: null,
       updatedAt: serverTimestamp()
     });
     

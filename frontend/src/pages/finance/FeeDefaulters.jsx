@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { getCurrentAcademicYear } from '../../utils';
+
 import { motion } from 'framer-motion';
 import { NavLink } from 'react-router-dom';
 import { AlertCircle, Download, FileText, Loader2, Search } from 'lucide-react';
@@ -22,6 +24,8 @@ export default function FeeDefaulters() {
 
   const [selectedClass, setSelectedClass] = useState('');
   const [q, setQ] = useState('');
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
 
   useEffect(() => {
     Promise.all([
@@ -51,17 +55,20 @@ export default function FeeDefaulters() {
     const defaultersList = [];
 
     students.forEach(s => {
+      if ((s.academicYear || '2026-27') !== academicYear) return;
       if (!s.className) return;
       if (!summaryMap[s.className]) {
         summaryMap[s.className] = { class: s.className, defaultersCount: 0, totalDefaulterAmount: 0 };
       }
 
-      // Calculate total Past Due
       let totalPastDue = 0;
       let totalFee = 0;
       const pastDueTerms = [];
 
-      feeCategories.forEach(cat => {
+      const filteredCategories = feeCategories.filter(c => (c.academicYear || '2026-27') === academicYear);
+      const filteredTransactions = transactions.filter(t => (t.academicYear || '2026-27') === academicYear);
+
+      filteredCategories.forEach(cat => {
         (cat.terms || []).forEach(t => {
           const amt = Number((t.amounts && t.amounts[s.className]) ?? (t.amounts && t.amounts['default']) ?? 0);
           if (amt > 0) {
@@ -76,7 +83,7 @@ export default function FeeDefaulters() {
       });
 
       // Calculate paid and concessions
-      const paid = transactions.filter(tx => tx.studentId === s.id).reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+      const paid = filteredTransactions.filter(tx => tx.studentId === s.id).reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
       const con = concessions.find(c => c.studentId === s.id);
       const concessionAmt = Number(con?.amount || 0);
 
@@ -108,7 +115,7 @@ export default function FeeDefaulters() {
     const sortedClassDefaulters = defaultersList.sort((a,b) => b.defaulterAmount - a.defaulterAmount);
 
     return { schoolSummary, classDefaulters: sortedClassDefaulters };
-  }, [students, feeCategories, transactions, concessions, selectedClass]);
+  }, [students, feeCategories, transactions, concessions, selectedClass, academicYear]);
 
   const filteredDefaulters = classDefaulters.filter(d => 
     `${d.fullName} ${d.admissionNo}`.toLowerCase().includes(q.toLowerCase())
@@ -249,10 +256,20 @@ export default function FeeDefaulters() {
           </div>
 
           <div className="glass-morphism rounded-[2rem] p-5">
-            <label className="label-eyebrow text-muted-foreground">Select Class</label>
-            <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm">
-              {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
+            <div className="space-y-4">
+              <div>
+                <label className="label-eyebrow text-muted-foreground">Academic Year</label>
+                <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm font-bold shadow-sm">
+                  {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label-eyebrow text-muted-foreground">Select Class</label>
+                <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm">
+                  {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
+              </div>
+            </div>
           </div>
         </div>
 

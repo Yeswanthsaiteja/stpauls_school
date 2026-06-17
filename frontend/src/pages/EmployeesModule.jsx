@@ -251,6 +251,14 @@ function EmployeePanel({ emp, colorIdx, onClose, onSave }) {
                 </div>
               </div>
               <div>
+                <div className="label-eyebrow text-muted-foreground mb-3">🔒 Biometric & Shift Timing</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="RFID No. (Biometric)" name="rfidNo" value={form.rfidNo} onChange={handleChange} placeholder="e.g. 9568912" />
+                  <Field label="Shift Start Time" name="shiftStartTime" value={form.shiftStartTime} onChange={handleChange} type="time" />
+                  <Field label="Shift End Time" name="shiftEndTime" value={form.shiftEndTime} onChange={handleChange} type="time" />
+                </div>
+              </div>
+              <div>
                 <div className="label-eyebrow text-muted-foreground mb-3">Additional Module Permissions</div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {AVAILABLE_MODULES.map(m => {

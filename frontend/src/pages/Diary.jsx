@@ -6,6 +6,7 @@ import { listDiaryEntries, addDiaryEntry } from '../services/firebase/communicat
 import { CLASS_OPTIONS, SECTION_OPTIONS } from '../lib/pdfUtils';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
+import { getCurrentAcademicYear } from '../utils';
 
 export default function Diary() {
   const { profile } = useAuth();
@@ -21,11 +22,13 @@ export default function Diary() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [filterAcademicYear, setFilterAcademicYear] = useState(getCurrentAcademicYear());
   const [filterCls, setFilterCls] = useState(isParent ? parentClass : '');
   const [filterSec, setFilterSec] = useState(isParent ? parentSection : '');
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
+    academicYear: getCurrentAcademicYear(),
     className: CLASS_OPTIONS[0] || '7th', section: 'A', note: '', homework: '',
     author: profile?.fullName || 'Teacher',
   });
@@ -57,6 +60,7 @@ export default function Diary() {
   };
 
   const visible = list.filter((d) =>
+    (!filterAcademicYear || d.academicYear === filterAcademicYear) &&
     (!filterCls || d.className === filterCls) &&
     (!filterSec || d.section === filterSec)
   );
@@ -90,7 +94,13 @@ export default function Diary() {
       </div>
 
       {!isParent && (
-        <div className="glass-morphism rounded-[2rem] p-4 grid grid-cols-2 md:grid-cols-3 gap-2">
+        <div className="glass-morphism rounded-[2rem] p-4 grid grid-cols-1 md:grid-cols-3 gap-2">
+          <select value={filterAcademicYear} onChange={(e) => setFilterAcademicYear(e.target.value)} className="h-10 px-3 rounded-2xl border border-border bg-card text-sm">
+            <option value="2024-25">2024-25</option>
+            <option value="2025-26">2025-26</option>
+            <option value="2026-27">2026-27</option>
+            <option value="2027-28">2027-28</option>
+          </select>
           <select value={filterCls} onChange={(e) => setFilterCls(e.target.value)} className="h-10 px-3 rounded-2xl border border-border bg-card text-sm">
             <option value="">All Classes</option>{CLASS_OPTIONS.map((c) => <option key={c}>{c}</option>)}
           </select>
@@ -114,7 +124,7 @@ export default function Diary() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <div className="font-bold text-sm">{d.author}</div>
                   <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary label-eyebrow">{d.className}{d.section ? `-${d.section}` : ''}</span>
-                  <span className="label-eyebrow text-muted-foreground">{d.date}</span>
+                  <span className="label-eyebrow text-muted-foreground">{d.date} {d.academicYear ? `· ${d.academicYear}` : ''}</span>
                 </div>
                 {d.note && <p className="text-sm mt-1.5">{d.note}</p>}
                 {d.homework && (
@@ -139,6 +149,12 @@ export default function Diary() {
             </div>
             <div className="space-y-3">
               <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="w-full h-11 px-3 rounded-2xl border border-border bg-background text-sm" />
+              <select value={form.academicYear} onChange={(e) => setForm({ ...form, academicYear: e.target.value })} className="w-full h-11 px-3 rounded-2xl border border-border bg-background text-sm">
+                <option value="2024-25">2024-25</option>
+                <option value="2025-26">2025-26</option>
+                <option value="2026-27">2026-27</option>
+                <option value="2027-28">2027-28</option>
+              </select>
               <div className="grid grid-cols-2 gap-2">
                 <select value={form.className} onChange={(e) => setForm({ ...form, className: e.target.value })} className="h-11 px-3 rounded-2xl border border-border bg-background text-sm">
                   {CLASS_OPTIONS.map((c) => <option key={c}>{c}</option>)}

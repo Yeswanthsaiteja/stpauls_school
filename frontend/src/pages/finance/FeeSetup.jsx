@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { getCurrentAcademicYear } from '../../utils';
+
 import { motion, AnimatePresence } from 'framer-motion';
 import { NavLink } from 'react-router-dom';
 import { Plus, Trash2, CalendarDays, Save, Edit3, X } from 'lucide-react';
@@ -9,6 +11,8 @@ import { toast } from 'sonner';
 
 export default function FeeSetup() {
   const [cats, setCats] = useState([]);
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
   const [newCat, setNewCat] = useState({ name: '', type: 'recurring', appliesTo: 'all' });
   const [loading, setLoading] = useState(true);
 
@@ -23,7 +27,7 @@ export default function FeeSetup() {
     if (!newCat.name) return toast.error('Name required');
     // Default to one term when created
     const defaultTerm = { id: Date.now().toString(), name: 'Full Fee', dueDate: '', amounts: { default: 0 } };
-    const row = await addFeeCategory({ ...newCat, terms: [defaultTerm] });
+    const row = await addFeeCategory({ ...newCat, academicYear, terms: [defaultTerm] });
     if (row) {
       setCats((c) => [row, ...c]);
       setNewCat({ name: '', type: 'recurring', appliesTo: 'all' });
@@ -88,8 +92,15 @@ export default function FeeSetup() {
 
   return (
     <div className="space-y-6" data-testid="fee-setup">
-      <NavLink to="/dashboard/finance" className="label-eyebrow text-primary">← Back to Finance</NavLink>
-      <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Fee Setup</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <NavLink to="/dashboard/finance" className="label-eyebrow text-primary">← Back to Finance</NavLink>
+          <h1 className="font-display font-black text-3xl tracking-tighter uppercase mt-1">Fee Setup</h1>
+        </div>
+        <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className="h-11 px-4 rounded-2xl border border-border bg-card text-sm font-bold shadow-sm">
+          {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
 
       {/* Add category */}
       <div className="glass-morphism rounded-[2rem] p-5">
@@ -107,7 +118,7 @@ export default function FeeSetup() {
 
       {/* Categories list */}
       <div className="space-y-4">
-        {cats.map((c) => (
+        {cats.filter(c => (c.academicYear || '2026-27') === academicYear).map((c) => (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} key={c.id} className="glass-morphism rounded-[2rem] p-5 border border-primary/20">
             <div className="flex items-center justify-between border-b border-border pb-3 mb-4">
               <div>
@@ -162,7 +173,9 @@ export default function FeeSetup() {
             </div>
           </motion.div>
         ))}
-        {cats.length === 0 && !loading && <div className="text-center py-10 text-muted-foreground">No fee categories created yet.</div>}
+        {cats.filter(c => (c.academicYear || '2026-27') === academicYear).length === 0 && !loading && (
+          <div className="text-center py-10 text-muted-foreground">No fee categories created for {academicYear}.</div>
+        )}
       </div>
     </div>
   );

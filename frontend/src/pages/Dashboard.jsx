@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Users, UserSquare2, IndianRupee, CalendarCheck, AlertCircle, RefreshCw, Download, Sparkles, TrendingUp, GraduationCap } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { listStudents } from '../services/firebase/studentsService';
 import { listEmployees } from '../services/firebase/employeesService';
 import { listTransactions } from '../services/firebase/financeService';
@@ -19,14 +20,15 @@ const STAT_COLORS = {
   rose:    { from: 'from-rose-500',    to: 'to-pink-500',    ring: 'bg-rose-500/10',    text: 'text-rose-500'    },
 };
 
-const StatCard = ({ icon: Icon, label, value, color = 'indigo', sub, testId }) => {
+const StatCard = ({ icon: Icon, label, value, color = 'indigo', sub, testId, onClick }) => {
   const c = STAT_COLORS[color];
   return (
     <motion.div
       data-testid={testId}
+      onClick={onClick}
       whileHover={{ y: -5, scale: 1.02 }}
       transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-      className="relative glass-morphism rounded-[2rem] p-5 overflow-hidden"
+      className={`relative glass-morphism rounded-[2rem] p-5 overflow-hidden ${onClick ? 'cursor-pointer hover:shadow-lg transition-shadow' : ''}`}
     >
       <div className={`absolute -top-10 -right-10 h-32 w-32 rounded-full ${c.ring} blur-2xl`} />
       <div className="flex items-start justify-between relative">
@@ -43,6 +45,7 @@ const StatCard = ({ icon: Icon, label, value, color = 'indigo', sub, testId }) =
 
 export default function AdminDashboard() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { tenant } = useTenant();
   const [tick, setTick] = useState(0);
   const [insights, setInsights] = useState(null);
@@ -146,11 +149,11 @@ export default function AdminDashboard() {
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        <StatCard testId="stat-students" icon={Users} color="indigo" label={t('totalStudents')} value={stats.students} sub="+4 this week" />
-        <StatCard testId="stat-staff" icon={UserSquare2} color="purple" label={t('totalStaff')} value={stats.staff} sub="3 depts" />
-        <StatCard testId="stat-collection" icon={IndianRupee} color="emerald" label={t('feeCollection')} value={stats.collection} sub="MTD" />
-        <StatCard testId="stat-attendance" icon={CalendarCheck} color="amber" label={t('attendanceToday')} value={stats.attendance} sub="Today" />
-        <StatCard testId="stat-pending" icon={AlertCircle} color="rose" label={t('pendingFees')} value={stats.pending} sub="Outstanding" />
+        <StatCard onClick={() => navigate('/dashboard/students/directory')} testId="stat-students" icon={Users} color="indigo" label={t('totalStudents')} value={stats.students} sub="+4 this week" />
+        <StatCard onClick={() => navigate('/dashboard/employees/directory')} testId="stat-staff" icon={UserSquare2} color="purple" label={t('totalStaff')} value={stats.staff} sub="3 depts" />
+        <StatCard onClick={() => navigate('/dashboard/finance/collect')} testId="stat-collection" icon={IndianRupee} color="emerald" label={t('feeCollection')} value={stats.collection} sub="MTD" />
+        <StatCard onClick={() => navigate('/dashboard/student-attendance')} testId="stat-attendance" icon={CalendarCheck} color="amber" label={t('attendanceToday')} value={stats.attendance} sub="Today" />
+        <StatCard onClick={() => navigate('/dashboard/finance/defaulters')} testId="stat-pending" icon={AlertCircle} color="rose" label={t('pendingFees')} value={stats.pending} sub="Outstanding" />
       </div>
 
       {/* Main grid */}

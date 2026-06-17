@@ -5,6 +5,7 @@ import { Upload, Check, Loader2 } from 'lucide-react';
 import { addEmployee, listEmployees } from '../services/firebase/employeesService';
 import { logActivity } from '../services/firebase/activityService';
 import { toast } from 'sonner';
+import { uploadToStorage } from '../lib/storageUtils';
 
 const ROLES = ['Teacher', 'Class Teacher', 'Principal', 'Vice Principal', 'Accountant', 'Librarian', 'Lab Assistant', 'Administrative', 'Support Staff'];
 const DEPARTMENTS = ['Teaching', 'Non teaching', 'Administration'];
@@ -62,6 +63,7 @@ function SelectField({ label, k, options, value, onChange }) {
 
 export default function EmployeeAdd() {
   const [saving, setSaving] = useState(false);
+  const [photoFile, setPhotoFile] = useState(null);
   const [form, setForm] = useState({
     fullName: '', employeeId: '',
     dateOfBirth: '', gender: 'Male', phoneNumber: '', email: '', address: '',
@@ -73,12 +75,15 @@ export default function EmployeeAdd() {
     bankAccount: '', bankName: '', ifsc: '',
     basicSalary: 0, photoURL: '',
     permissions: [],
+    rfidNo: '',
+    shiftStartTime: '09:00', shiftEndTime: '17:00',
   });
   const navigate = useNavigate();
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const onPhoto = (e) => {
     const f = e.target.files?.[0]; if (!f) return;
+    setPhotoFile(f);
     const r = new FileReader(); r.onload = (ev) => setForm(prev => ({ ...prev, photoURL: String(ev.target.result || '') })); r.readAsDataURL(f);
   };
 
@@ -127,7 +132,14 @@ export default function EmployeeAdd() {
         }
       }
 
-      const emp = await addEmployee({ ...form, designation: form.role, status: 'ACTIVE' });
+      let finalPhotoURL = form.photoURL;
+      if (photoFile) {
+        const ext = photoFile.name.split('.').pop() || 'jpg';
+        const path = `staff-photos/${form.phoneNumber}_${Date.now()}.${ext}`;
+        finalPhotoURL = await uploadToStorage(photoFile, path);
+      }
+
+      const emp = await addEmployee({ ...form, designation: form.role, status: 'ACTIVE', photoURL: finalPhotoURL });
       toast.success(`Employee ${emp?.employeeId || form.fullName} created`);
       
       // Log system activity & alert admin
@@ -219,6 +231,19 @@ export default function EmployeeAdd() {
             <Field label="Institution" k="institution" value={form.institution} onChange={set('institution')} />
             <Field label="Year" k="qualYear" type="number" value={form.qualYear} onChange={set('qualYear')} />
           </div>
+        </div>
+
+        {/* ── Biometric & Shift Timing ── */}
+        <div>
+          <div className="label-eyebrow text-muted-foreground mb-3 font-semibold">🔒 Biometric & Shift Timing</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Field label="RFID No. (Biometric)" k="rfidNo" placeholder="e.g. 9568912" value={form.rfidNo} onChange={set('rfidNo')} />
+            <Field label="Shift Start Time" k="shiftStartTime" type="time" value={form.shiftStartTime} onChange={set('shiftStartTime')} />
+            <Field label="Shift End Time" k="shiftEndTime" type="time" value={form.shiftEndTime} onChange={set('shiftEndTime')} />
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            ℹ️ RFID No. must match exactly what is stored in the biometric machine. This is used to link punch data for attendance.
+          </p>
         </div>
 
         {/* ── Bank & Salary ── */}

@@ -1,4 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { getCurrentAcademicYear } from '../utils';
+
 import { motion, AnimatePresence } from 'framer-motion';
 import { NavLink } from 'react-router-dom';
 import { Save, MessageCircle, CalendarDays, Loader2, RefreshCw, CheckCircle2, X, Send } from 'lucide-react';
@@ -25,6 +27,8 @@ export default function StudentAttendance() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
   const [className, setClassName] = useState('');
   const [section, setSection] = useState('');
   const [marks, setMarks] = useState({});
@@ -64,11 +68,11 @@ export default function StudentAttendance() {
     if (!className) return;
     setLoading(true);
     listStudents({ status: 'ACTIVE' }).then((all) => {
-      const filtered = all.filter((s) => s.className === className && s.section === section);
+      const filtered = all.filter((s) => (s.academicYear || '2026-27') === academicYear && s.className === className && s.section === section);
       setStudents(filtered);
       setLoading(false);
     });
-  }, [className, section]);
+  }, [className, section, academicYear]);
 
   const [holiday, setHoliday] = useState(null);
 
@@ -168,7 +172,13 @@ export default function StudentAttendance() {
       </div>
 
       {/* Filters */}
-      <div className="glass-morphism rounded-[2rem] p-5 grid grid-cols-1 sm:grid-cols-4 gap-3">
+      <div className="glass-morphism rounded-[2rem] p-5 grid grid-cols-1 sm:grid-cols-5 gap-3">
+        <div>
+          <label className="label-eyebrow text-muted-foreground">Academic Year</label>
+          <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm">
+            {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
         <div>
           <label className="label-eyebrow text-muted-foreground"><CalendarDays className="inline h-3 w-3 mr-1" />Date</label>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm" data-testid="att-date" />

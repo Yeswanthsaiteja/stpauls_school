@@ -22,7 +22,7 @@ npm run build
 echo ""
 echo "🚀  Step 2/2 — Deploying to Firebase Hosting..."
 cd "$PROJECT_ROOT"
-npx -y firebase-tools@latest deploy --only hosting --project stpauls-erp
+npx -y firebase-tools@latest deploy --only storage,hosting --project stpauls-erp
 
 echo ""
 echo "✅  Done! Your app is live at:"

@@ -81,6 +81,11 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /biometric_logs/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     // ─── Fees / Payments ─────────────────────────────────────────────────────
     match /fee_categories/{docId} {
       allow read: if isSignedIn();
@@ -278,6 +283,11 @@ service cloud.firestore {
     }
 
     match /library_issues/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isStaff();
+    }
+
+    match /library_racks/{docId} {
       allow read: if isSignedIn();
       allow write: if isAdmin() || isStaff();
     }

@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { getCurrentAcademicYear } from '../../utils';
+
 import { motion } from 'framer-motion';
 import { NavLink, useSearchParams } from 'react-router-dom';
 import { Search, Award, Download, Eye, Loader2 } from 'lucide-react';
@@ -15,10 +17,10 @@ const CERT_TYPES = [
 ];
 
 const TEMPLATES = {
-  'Bonafide Certificate': (s, t, today) => `This is to certify that ${s.fullName}, son/daughter of ${s.fatherName || '—'}, bearing Admission No. ${s.admissionNo} is a bonafide student of ${t.name || 'this institution'}, currently studying in Class ${s.className} Section ${s.section} during the academic year ${s.academicYear || '2025-26'}. This certificate is issued for the purpose stated by the applicant on ${today}.`,
+  'Bonafide Certificate': (s, t, today) => `This is to certify that ${s.fullName}, son/daughter of ${s.fatherName || '—'}, bearing Admission No. ${s.admissionNo} is a bonafide student of ${t.name || 'this institution'}, currently studying in Class ${s.className} Section ${s.section} during the academic year ${s.academicYear || '2026-27'}. This certificate is issued for the purpose stated by the applicant on ${today}.`,
   'Transfer Certificate': (s, t, today) => `Transfer Certificate is hereby issued to ${s.fullName} (Adm. No. ${s.admissionNo}), born on ${s.dateOfBirth || '—'}, who has been studying in Class ${s.className}-${s.section} at ${t.name}. The student has completed all formalities and is leaving the institution from ${today}. Character and conduct were found to be good.`,
   'Character Certificate': (s, t, today) => `This is to certify that ${s.fullName} (Adm. No. ${s.admissionNo}) of Class ${s.className}-${s.section} has been a student of ${t.name}. During the period of study, the student's character and conduct were observed to be exemplary. Issued on ${today}.`,
-  'Study Certificate': (s, t, today) => `This is to certify that ${s.fullName} (Adm. No. ${s.admissionNo}) is currently a student of Class ${s.className}-${s.section} at ${t.name} for the academic year ${s.academicYear || '2025-26'}. Issued on ${today}.`,
+  'Study Certificate': (s, t, today) => `This is to certify that ${s.fullName} (Adm. No. ${s.admissionNo}) is currently a student of Class ${s.className}-${s.section} at ${t.name} for the academic year ${s.academicYear || '2026-27'}. Issued on ${today}.`,
   'Date of Birth Certificate': (s, t, today) => `This is to certify that according to school records, ${s.fullName} (Adm. No. ${s.admissionNo}) was born on ${s.dateOfBirth || '—'}. Issued on ${today}.`,
   'Medium of Instruction Certificate': (s, t, today) => `This is to certify that ${s.fullName} (Adm. No. ${s.admissionNo}) has been receiving instruction in ${s.mediumOfInstruction || 'English'} medium at ${t.name}. Issued on ${today}.`,
   'Migration Certificate': (s, t, today) => `Migration Certificate is granted to ${s.fullName} (Adm. No. ${s.admissionNo}) who has completed studies at ${t.name} and is hereby permitted to migrate to another institution. Issued on ${today}.`,
@@ -33,6 +35,8 @@ export default function Certificates() {
   const { tenant } = useTenant();
 
   const [q, setQ] = useState('');
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
   const [studentId, setStudentId] = useState(presetId || '');
   const [type, setType] = useState('Bonafide Certificate');
   const [customBody, setCustomBody] = useState('');
@@ -44,7 +48,12 @@ export default function Certificates() {
     listStudents({ status: 'ACTIVE' }).then(setStudents);
   }, []);
 
-  const matches = students.filter((s) => q && `${s.fullName} ${s.admissionNo}`.toLowerCase().includes(q.toLowerCase())).slice(0, 6);
+  const matches = q
+    ? students
+        .filter(s => (s.academicYear || '2026-27') === academicYear)
+        .filter((s) => `${s.fullName} ${s.admissionNo}`.toLowerCase().includes(q.toLowerCase()))
+        .slice(0, 5)
+    : [];
   const student = students.find((s) => s.id === studentId);
   const body = customBody || (student ? TEMPLATES[type]?.(student, tenant || { name: 'School' }, issueDate) : '');
 
@@ -76,9 +85,14 @@ export default function Certificates() {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
         {/* Form */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="glass-morphism rounded-[2rem] p-5 space-y-3">
-            <label className="label-eyebrow text-muted-foreground">Select Student</label>
-            <div className="flex items-center gap-2 px-3 h-11 rounded-2xl border border-border bg-card">
+          <div className="glass-morphism rounded-[2rem] p-5">
+            <div className="flex items-center justify-between gap-4">
+              <label className="label-eyebrow text-muted-foreground">Find Student</label>
+              <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className="h-9 px-3 rounded-xl border border-border bg-card text-xs">
+                {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            <div className="mt-1.5 flex items-center gap-2 px-3 h-11 rounded-2xl border border-border bg-card">
               <Search className="h-4 w-4 text-muted-foreground" />
               <input value={q} onChange={(e) => { setQ(e.target.value); setStudentId(''); }} placeholder="Search…" className="flex-1 bg-transparent outline-none text-sm" data-testid="cert-search" />
             </div>

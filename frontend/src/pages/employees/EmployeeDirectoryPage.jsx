@@ -256,6 +256,19 @@ function ProfileModal({ emp, idx, onClose, onUpdated }) {
                 <F label="Aadhar" name="aadharNumber" value={form.aadharNumber} onChange={handleChange} />
                 <F label="PAN" name="panNumber" value={form.panNumber} onChange={handleChange} />
               </div>
+
+              {/* Biometric & Shift Timing */}
+              <div className="pt-3 border-t border-border">
+                <div className="label-eyebrow text-muted-foreground mb-3">🔒 Biometric & Shift Timing</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <F label="RFID No. (Biometric)" name="rfidNo" value={form.rfidNo} onChange={handleChange} span />
+                  <F label="Shift Start Time" name="shiftStartTime" type="time" value={form.shiftStartTime} onChange={handleChange} />
+                  <F label="Shift End Time" name="shiftEndTime" type="time" value={form.shiftEndTime} onChange={handleChange} />
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  ℹ️ Enter the RFID / Employee Code from the biometric machine. Used to match punch-in/out data for attendance.
+                </p>
+              </div>
               
               <div className="mt-4 pt-4 border-t border-border">
                 <label className="label-eyebrow text-muted-foreground block mb-3">Additional Module Permissions</label>

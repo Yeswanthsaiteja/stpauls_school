@@ -195,7 +195,7 @@ function mapStudentRow(row, headers) {
     status:       'ACTIVE',
     nationality:  'Indian',
     mediumOfInstruction: 'English',
-    academicYear: '2025-26',
+    academicYear: '2026-27',
   };
 }
 

@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { getCurrentAcademicYear } from '../utils';
+
 import { motion } from 'framer-motion';
 import { NavLink } from 'react-router-dom';
 import { Save, Calculator, Loader2 } from 'lucide-react';
@@ -20,6 +22,8 @@ export default function ResultsEntry() {
   const [examId, setExamId] = useState('');
   const [totalMarks, setTotalMarks] = useState(100);
   const [marks, setMarks] = useState({});
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
 
   useEffect(() => {
     Promise.all([listClasses(), listSubjects(), listStudents({ status: 'ACTIVE' }), listExamSetups()]).then(([clsList, subs, stus, exs]) => {
@@ -61,7 +65,7 @@ export default function ResultsEntry() {
     }
     const loadMarks = async () => {
       const res = await listResults({ className, examType: activeExamName });
-      const currentSubjectRes = res.filter(r => r.subjectId === subjectId);
+      const currentSubjectRes = res.filter(r => r.subjectId === subjectId && (r.academicYear || '2026-27') === academicYear);
       const newMarks = {};
       currentSubjectRes.forEach(r => {
         newMarks[r.studentId] = r.marks;
@@ -71,7 +75,7 @@ export default function ResultsEntry() {
     loadMarks();
   }, [className, activeExamName, subjectId]);
 
-  const rows    = useMemo(() => students.filter((s) => s.className === className && (!section || s.section === section)), [students, className, section]);
+  const rows    = useMemo(() => students.filter((s) => (s.academicYear || '2026-27') === academicYear && s.className === className && (!section || s.section === section)), [students, className, section, academicYear]);
   const sectionOpts = activeClassObj ? activeClassObj.sections : [];
   const classOpts = classes.map(c => c.name);
   const filteredSubjects = subjects.filter(s => s.className === className);
@@ -118,7 +122,7 @@ export default function ResultsEntry() {
         break;
       }
       const grade = isGradeOnly ? m : dynamicCalcGrade(num, examConfig);
-      payload.push({ studentId, studentName: student?.fullName, subjectId, subject: subject?.name, examType: activeExamName, marks: num, totalMarks: dynamicTotalMarks, grade, className, section });
+      payload.push({ studentId, studentName: student?.fullName, subjectId, subject: subject?.name, examType: activeExamName, marks: num, totalMarks: dynamicTotalMarks, grade, className, section, academicYear });
     }
     
     if (hasError) return;
@@ -134,7 +138,13 @@ export default function ResultsEntry() {
       <NavLink to="/dashboard/academic" className="label-eyebrow text-primary">← Back to Academic</NavLink>
       <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Results Entry</h1>
 
-      <div className="glass-morphism rounded-[2rem] p-5 grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="glass-morphism rounded-[2rem] p-5 grid grid-cols-2 md:grid-cols-6 gap-3">
+        <div>
+          <label className="label-eyebrow text-muted-foreground">Academic Year</label>
+          <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm">
+            {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
         <div>
           <label className="label-eyebrow text-muted-foreground">Class</label>
           <select value={className} onChange={(e) => {

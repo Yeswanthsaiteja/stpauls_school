@@ -19,10 +19,11 @@ async function fetchAll() {
     .filter((s) => s.tenantId === TENANT_ID);
 }
 
-export async function listStudents({ className, section, status } = {}) {
+export async function listStudents({ className, section, status, academicYear } = {}) {
   if (!isFirebaseConfigured || !db) { console.error('Firebase not configured'); return []; }
   return safe(async () => {
     let list = await fetchAll();
+    if (academicYear) list = list.filter((s) => s.academicYear === academicYear);
     if (className) list = list.filter((s) => s.className === className);
     if (section)   list = list.filter((s) => s.section   === section);
     if (status)    list = list.filter((s) => s.status    === status);
@@ -95,8 +96,8 @@ export async function deleteStudent(id) {
   await safe(() => deleteDoc(doc(db, COL, id)));
 }
 
-export async function searchStudents(term, { status = 'ACTIVE' } = {}) {
-  const all = await listStudents({ status });
+export async function searchStudents(term, { status = 'ACTIVE', academicYear } = {}) {
+  const all = await listStudents({ status, academicYear });
   const t = term.toLowerCase();
   return all.filter(
     (s) =>

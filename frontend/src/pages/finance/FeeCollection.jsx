@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { getCurrentAcademicYear } from '../../utils';
+
 import { motion } from 'framer-motion';
 import { NavLink, useParams } from 'react-router-dom';
 import {
@@ -16,8 +18,9 @@ import { formatCurrency } from '../../lib/utils';
 import { useTenant } from '../../contexts/TenantContext';
 import { logActivity } from '../../services/firebase/activityService';
 import { toast } from 'sonner';
+import ReceiptTemplate from '../../components/ReceiptTemplate';
 
-const MODES = ['Cash', 'Online', 'Cheque', 'DD', 'Razorpay'];
+const MODES = ['Cash', 'QR', 'Cheque', 'DD'];
 
 
 
@@ -60,6 +63,9 @@ export default function FeeCollection() {
   const { studentId: paramStudentId } = useParams();
   const { tenant } = useTenant();
 
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
+
   const [students, setStudents] = useState([]);
   const [feeCategories, setFeeCategories] = useState([]);
   const [allTx, setAllTx] = useState([]);
@@ -72,7 +78,7 @@ export default function FeeCollection() {
   // Collection form
   const [selectedCatId, setSelectedCatId] = useState('');
   const [payAmt, setPayAmt] = useState('');
-  const [mode, setMode] = useState('Online');
+  const [mode, setMode] = useState('Cash');
   const [chequeNo, setChequeNo] = useState('');
   const [bank, setBank] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -109,7 +115,10 @@ export default function FeeCollection() {
   }, [paramStudentId]);
 
   const matches = q
-    ? students.filter(s => `${s.fullName} ${s.admissionNo}`.toLowerCase().includes(q.toLowerCase())).slice(0, 8)
+    ? students
+        .filter(s => (s.academicYear || '2026-27') === academicYear)
+        .filter(s => `${s.fullName} ${s.admissionNo}`.toLowerCase().includes(q.toLowerCase()))
+        .slice(0, 8)
     : [];
 
   const selectStudent = (s) => {
@@ -127,7 +136,7 @@ export default function FeeCollection() {
     if (!picked || !feeCategories.length) return [];
     const today = new Date().toISOString().slice(0, 10);
 
-    return feeCategories.map(cat => {
+    return feeCategories.filter(c => (c.academicYear || '2026-27') === academicYear).map(cat => {
       const terms = (cat.terms || []).map(t => {
         const feeAmt = Number((t.amounts?.[picked.className]) ?? (t.amounts?.['default']) ?? 0);
         const concEntry = concessionsV2.find(c => c.categoryId === cat.id && c.termId === t.id && c.studentId === picked.id);
@@ -150,7 +159,11 @@ export default function FeeCollection() {
 
       return { ...cat, terms, totalFee, totalConc, totalPaid, totalDue };
     }).filter(c => c.totalFee > 0);
-  }, [picked, feeCategories, studentTx, concessionsV2]);
+  }, [picked, feeCategories, studentTx, concessionsV2, academicYear]);
+
+  const filteredStudentTx = useMemo(() => {
+    return studentTx.filter(t => (t.academicYear || '2026-27') === academicYear);
+  }, [studentTx, academicYear]);
 
   // Auto-select first valid category
   useEffect(() => {
@@ -181,32 +194,7 @@ export default function FeeCollection() {
     return allocations;
   }, [picked, selectedCatId, payAmt, feeCategories, studentTx, concessionsV2]);
 
-  const collect = async () => {
-    if (!picked) return toast.error('Select a student');
-    if (!selectedCatId) return toast.error('Select a fee category');
-    const amt = Number(payAmt);
-    if (!amt || amt <= 0) return toast.error('Enter a valid amount');
-
-    const cat = feeCategories.find(c => c.id === selectedCatId);
-    const catDue = categoryBreakdown.find(c => c.id === selectedCatId);
-    
-    if (!catDue) return toast.error('This fee category is not applicable to this student.');
-    if (catDue.totalDue <= 0) return toast.error('No amount is due to collect fees for this category.');
-    if (amt > catDue.totalDue + 0.01) {
-      return toast.error(`Amount exceeds the pending ₹${catDue.totalDue.toLocaleString('en-IN')}`);
-    }
-
-    const studentConcsV2 = concessionsV2.filter(c => c.studentId === picked.id);
-    const { allocations } = allocatePayment(
-      Math.min(amt, catDue?.totalDue || amt),
-      cat?.terms || [],
-      picked.className,
-      studentTx,
-      studentConcsV2,
-      selectedCatId,
-    );
-
-    if (saving) return; setSaving(true);
+  const finalizePayment = async (amt, cat, allocations, rzpPaymentId = null) => {
     try {
       const row = await addTransaction({
         studentId: picked.id,
@@ -217,11 +205,12 @@ export default function FeeCollection() {
         section: picked.section,
         feeName: cat?.name || 'Fee Payment',
         categoryId: selectedCatId,
-        amount: Math.min(amt, catDue?.totalDue || amt),
+        amount: amt,
         paymentDate: new Date().toISOString(),
         paymentMethod: mode.toUpperCase(),
+        academicYear,
         status: 'PAID',
-        remarks,
+        remarks: rzpPaymentId ? `Razorpay: ${rzpPaymentId}` : remarks,
         chequeNo,
         bank,
         termAllocations: allocations,
@@ -243,6 +232,117 @@ export default function FeeCollection() {
     }
   };
 
+  const collect = async () => {
+    if (!picked) return toast.error('Select a student');
+    if (!selectedCatId) return toast.error('Select a fee category');
+    const amt = Number(payAmt);
+    if (!amt || amt <= 0) return toast.error('Enter a valid amount');
+
+    const cat = feeCategories.find(c => c.id === selectedCatId);
+    const catDue = categoryBreakdown.find(c => c.id === selectedCatId);
+    
+    if (!catDue) return toast.error('This fee category is not applicable to this student.');
+    if (catDue.totalDue <= 0) return toast.error('No amount is due to collect fees for this category.');
+    if (amt > catDue.totalDue + 0.01) {
+      return toast.error(`Amount exceeds the pending ₹${catDue.totalDue.toLocaleString('en-IN')}`);
+    }
+
+    const studentConcsV2 = concessionsV2.filter(c => c.studentId === picked.id);
+    const actualAmt = Math.min(amt, catDue?.totalDue || amt);
+    const { allocations } = allocatePayment(
+      actualAmt,
+      cat?.terms || [],
+      picked.className,
+      studentTx,
+      studentConcsV2,
+      selectedCatId,
+    );
+
+    if (saving) return; setSaving(true);
+    
+    if (mode === 'QR') {
+      try {
+        const rzpKey = process.env.REACT_APP_RAZORPAY_KEY_ID;
+        
+        if (!rzpKey) {
+          setSaving(false);
+          return toast.error('Razorpay not configured. Please contact school admin.');
+        }
+
+        const isLoaded = await new Promise((resolve) => {
+          if (window.Razorpay) { resolve(true); return; }
+          const script = document.createElement('script');
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          script.onload = () => resolve(true);
+          script.onerror = () => resolve(false);
+          document.body.appendChild(script);
+        });
+
+        if (!isLoaded) {
+          setSaving(false);
+          return toast.error('Failed to load Razorpay SDK');
+        }
+
+        const options = {
+          key: rzpKey,
+          amount: actualAmt * 100,
+          currency: "INR",
+          name: tenant?.name || "St Paul's School",
+          description: `Fee Payment for ${picked.fullName}`,
+          prefill: {
+            name: picked.fullName,
+            method: 'upi'
+          },
+          config: {
+            display: {
+              blocks: { upi: { name: 'Pay via UPI', instruments: [{ method: 'upi' }] } },
+              sequence: ['block.upi'],
+              preferences: { show_default_blocks: false }
+            }
+          },
+          handler: async function (response) {
+            const pid = typeof response === 'string' ? response : response.razorpay_payment_id;
+            await finalizePayment(actualAmt, cat, allocations, pid);
+          },
+          modal: {
+            ondismiss: function() {
+              setSaving(false);
+            }
+          }
+        };
+
+        if (window.RazorpayCheckout) {
+          // Native Android SDK — only accepts minimal flat options
+          const nativeOptions = {
+            key: rzpKey,
+            amount: String(Math.round(actualAmt * 100)),
+            currency: 'INR',
+            name: tenant?.name || "St Paul's School",
+            description: `Fee Payment for ${picked.fullName}`,
+            prefill_name: picked.fullName || '',
+            theme_color: '#4f46e5',
+          };
+          window.RazorpayCheckout.open(nativeOptions, async (response) => {
+            const pid = typeof response === 'string' ? response : response.razorpay_payment_id;
+            await finalizePayment(actualAmt, cat, allocations, pid);
+          }, (error) => {
+            setSaving(false);
+            toast.error(error.description || 'Payment cancelled');
+          });
+        } else {
+          const rzp = new window.Razorpay(options);
+          rzp.open();
+        }
+      } catch (e) {
+        console.error(e);
+        setSaving(false);
+        toast.error('Failed to initiate Razorpay QR');
+      }
+    } else {
+      await finalizePayment(actualAmt, cat, allocations);
+    }
+  };
+
   const handleSaveConcession = async (categoryId, termId, amount, reason) => {
     try {
       await setConcessionV2({ studentId: picked.id, categoryId, termId, amount, reason });
@@ -261,7 +361,7 @@ export default function FeeCollection() {
   const downloadReceipt = async () => {
     if (!lastReceipt) return;
     try {
-      await downloadElementAsPDF('receipt-preview', `${lastReceipt.receiptNo}.pdf`);
+      await downloadElementAsPDF('classic-receipt-preview', `${lastReceipt.receiptNo}.pdf`);
     } catch {
       toast.error('Download failed');
     }
@@ -271,8 +371,15 @@ export default function FeeCollection() {
 
   return (
     <div className="space-y-6" data-testid="fee-collection">
-      <NavLink to="/dashboard/finance" className="label-eyebrow text-primary">← Back to Finance</NavLink>
-      <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Fee Collection</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <NavLink to="/dashboard/finance" className="label-eyebrow text-primary">← Back to Finance</NavLink>
+          <h1 className="font-display font-black text-3xl tracking-tighter uppercase mt-1">Fee Collection</h1>
+        </div>
+        <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className="h-11 px-4 rounded-2xl border border-border bg-card text-sm font-bold shadow-sm">
+          {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-4">
@@ -494,10 +601,10 @@ export default function FeeCollection() {
 
               {/* Transaction history */}
               <div className="glass-morphism rounded-[2rem] p-5">
-                <div className="label-eyebrow text-muted-foreground mb-3">Payment History</div>
+                <div className="label-eyebrow text-muted-foreground mb-3">Payment History for {academicYear}</div>
                 <div className="space-y-2">
-                  {studentTx.length === 0 && <div className="text-sm text-muted-foreground py-4 text-center">No prior payments</div>}
-                  {studentTx.map(t => (
+                  {filteredStudentTx.length === 0 && <div className="text-sm text-muted-foreground py-4 text-center">No prior payments for {academicYear}</div>}
+                  {filteredStudentTx.map(t => (
                     <div key={t.id} className="p-3 rounded-2xl border border-border">
                       <div className="flex items-center justify-between">
                         <div>
@@ -577,9 +684,12 @@ export default function FeeCollection() {
               </div>
             </motion.div>
             {lastReceipt && (
-              <button onClick={downloadReceipt} className="mt-4 w-full h-11 rounded-2xl bg-foreground hover:bg-foreground/90 text-background label-eyebrow flex items-center justify-center gap-2 transition-colors">
-                <Download className="h-4 w-4" />Download Receipt
-              </button>
+              <>
+                <ReceiptTemplate receiptData={lastReceipt} id="classic-receipt-preview" />
+                <button onClick={downloadReceipt} className="mt-4 w-full h-11 rounded-2xl bg-foreground hover:bg-foreground/90 text-background label-eyebrow flex items-center justify-center gap-2 transition-colors">
+                  <Download className="h-4 w-4" />Download Receipt
+                </button>
+              </>
             )}
           </div>
         </div>

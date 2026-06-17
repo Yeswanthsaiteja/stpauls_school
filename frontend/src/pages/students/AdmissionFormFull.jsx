@@ -7,6 +7,7 @@ import { listRoutes, addAllocation as addTransportAllocation } from '../../servi
 import { listRooms, allocateRoom } from '../../services/firebase/hostelService';
 import { logActivity } from '../../services/firebase/activityService';
 import { toast } from 'sonner';
+import { uploadToStorage } from '../../lib/storageUtils';
 
 // ─── STEPS ────────────────────────────────────────────────────────────────────
 const STEPS = [
@@ -74,7 +75,7 @@ const INIT = {
   // admission
   admissionDate: new Date().toISOString().slice(0, 10),
   admissionNo: '', admissionYear: '', admissionClass: '',
-  className: '', section: '', academicYear: '2025-26',
+  className: '', section: '', academicYear: '2026-27',
   admissionType: 'New', previousSchool: '', lastGradePassed: '', tcNumber: '',
   mediumOfInstruction: 'English', house: 'Red', siblings: '',
   // health
@@ -90,6 +91,8 @@ export default function AdmissionFormFull() {
   const { id } = useParams();
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [photoFile, setPhotoFile] = useState(null);
+  const [docFiles, setDocFiles] = useState({});
   const [loadingData, setLoadingData] = useState(!!id);
   const [data, setData] = useState(INIT);
   const [classes, setClasses] = useState([]);
@@ -120,6 +123,7 @@ export default function AdmissionFormFull() {
 
   const onPhoto = useCallback((e) => {
     const f = e.target.files?.[0]; if (!f) return;
+    setPhotoFile(f);
     const r = new FileReader();
     r.onload = (ev) => setData((d) => ({ ...d, photoURL: String(ev.target.result || '') }));
     r.readAsDataURL(f);
@@ -127,6 +131,7 @@ export default function AdmissionFormFull() {
 
   const onDoc = useCallback((key) => (e) => {
     const f = e.target.files?.[0]; if (!f) return;
+    setDocFiles((prev) => ({ ...prev, [key]: f }));
     const r = new FileReader();
     r.onload = (ev) => setData((d) => ({ ...d, docs: { ...d.docs, [key]: { name: f.name, dataURL: String(ev.target.result || '') } } }));
     r.readAsDataURL(f);
@@ -149,8 +154,30 @@ export default function AdmissionFormFull() {
     if (saving) return;
     setSaving(true);
     try {
+      const studentIdOrTemp = id || data.admissionNo || `NEW_${Date.now()}`;
+      
+      let finalPhotoURL = data.photoURL;
+      if (photoFile) {
+        const ext = photoFile.name.split('.').pop() || 'jpg';
+        const path = `student-photos/${studentIdOrTemp}_${Date.now()}.${ext}`;
+        finalPhotoURL = await uploadToStorage(photoFile, path);
+      }
+
+      const finalDocs = { ...data.docs };
+      for (const key of Object.keys(docFiles)) {
+        const file = docFiles[key];
+        if (file) {
+          const ext = file.name.split('.').pop() || 'jpg';
+          const path = `student-docs/${studentIdOrTemp}_${key}_${Date.now()}.${ext}`;
+          const url = await uploadToStorage(file, path);
+          finalDocs[key] = { name: file.name, dataURL: url };
+        }
+      }
+
       const payload = {
         ...data,
+        photoURL: finalPhotoURL,
+        docs: finalDocs,
         fullName: `${data.firstName.trim()} ${data.lastName.trim()}`,
         status: data.status || 'ACTIVE',
       };

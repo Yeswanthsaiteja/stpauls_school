@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { getCurrentAcademicYear } from '../utils';
+
 import { motion } from 'framer-motion';
 import { NavLink } from 'react-router-dom';
 import { BedDouble, Users, Plus, RefreshCw, Sparkles } from 'lucide-react';
@@ -12,19 +14,38 @@ export default function Hostel() {
   const [form, setForm] = useState({ block: 'A', number: '', type: 'BOYS', capacity: 4, floor: 1 });
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState('ALL');
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
+  const [allStudents, setAllStudents] = useState([]);
+  const [allAllocations, setAllAllocations] = useState([]);
 
   const load = async () => {
     setLoading(true);
-    const data = await listRooms();
+    const [data, stu, allocs] = await Promise.all([
+      listRooms(),
+      import('../services/firebase/studentsService').then(m => m.listStudents({ status: 'ACTIVE' })),
+      import('../services/firebase/hostelService').then(m => m.listHostelAllocations())
+    ]);
     setRooms(data);
+    setAllStudents(stu);
+    setAllAllocations(allocs);
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
 
-  const filtered = filter === 'ALL' ? rooms : rooms.filter(r => r.type === filter);
-  const total = rooms.reduce((s, r) => s + (r.capacity || 0), 0);
-  const occupied = rooms.reduce((s, r) => s + (r.occupied || 0), 0);
+  const activeStudentIds = new Set(allStudents.filter(s => (s.academicYear || '2026-27') === academicYear).map(s => s.id));
+  const activeAllocations = allAllocations.filter(a => activeStudentIds.has(a.studentId));
+
+  // Dynamically compute occupancy based on active allocations
+  const roomsWithDynamicOccupancy = rooms.map(r => {
+    const occ = activeAllocations.filter(a => a.roomId === r.id).length;
+    return { ...r, occupied: occ };
+  });
+
+  const filtered = filter === 'ALL' ? roomsWithDynamicOccupancy : roomsWithDynamicOccupancy.filter(r => r.type === filter);
+  const total = roomsWithDynamicOccupancy.reduce((s, r) => s + (r.capacity || 0), 0);
+  const occupied = roomsWithDynamicOccupancy.reduce((s, r) => s + (r.occupied || 0), 0);
   const pct = total ? Math.round((occupied / total) * 100) : 0;
 
   const handleAdd = async (e) => {
@@ -54,6 +75,9 @@ export default function Hostel() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Hostel</h1>
         <div className="flex items-center gap-2">
+          <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className="h-9 px-3 rounded-xl border border-border bg-card text-sm font-bold">
+            {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
           <button onClick={load} className="h-9 w-9 rounded-xl bg-muted grid place-items-center hover:bg-muted/80" title="Refresh">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>

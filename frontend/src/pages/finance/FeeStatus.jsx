@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { getCurrentAcademicYear } from '../../utils';
+
 import { NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -125,6 +127,8 @@ export default function FeeStatus() {
   const [expandedStudents, setExpandedStudents] = useState({});
   const [editingCon, setEditingCon] = useState(null);
   const [filterStatus, setFilterStatus] = useState('ALL');
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
 
   useEffect(() => {
     Promise.all([
@@ -152,19 +156,21 @@ export default function FeeStatus() {
 
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
+      if ((s.academicYear || '2026-27') !== academicYear) return false;
       if (s.className !== selectedClass) return false;
       if (selectedSection && s.section !== selectedSection) return false;
       if (search && !`${s.fullName} ${s.admissionNo}`.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
-  }, [students, selectedClass, selectedSection, search]);
+  }, [students, selectedClass, selectedSection, search, academicYear]);
 
   const studentSummaries = useMemo(() => {
+    const filteredCategories = feeCategories.filter(c => (c.academicYear || '2026-27') === academicYear);
     return filteredStudents.map(s => ({
       student: s,
-      ...buildStudentSummary(s, feeCategories, allTx, concessionsV2),
+      ...buildStudentSummary(s, filteredCategories, allTx, concessionsV2),
     }));
-  }, [filteredStudents, feeCategories, allTx, concessionsV2]);
+  }, [filteredStudents, feeCategories, allTx, concessionsV2, academicYear]);
 
   const displayedSummaries = useMemo(() => {
     if (filterStatus === 'ALL') return studentSummaries;
@@ -208,8 +214,15 @@ export default function FeeStatus() {
 
   return (
     <div className="space-y-6" data-testid="fee-status">
-      <NavLink to="/dashboard/finance" className="label-eyebrow text-primary">← Back to Finance</NavLink>
-      <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Fee Status</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <NavLink to="/dashboard/finance" className="label-eyebrow text-primary">← Back to Finance</NavLink>
+          <h1 className="font-display font-black text-3xl tracking-tighter uppercase mt-1">Fee Status</h1>
+        </div>
+        <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className="h-11 px-4 rounded-2xl border border-border bg-card text-sm font-bold shadow-sm">
+          {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
 
       {/* Filters */}
       <div className="glass-morphism rounded-[2rem] p-5 grid grid-cols-2 sm:grid-cols-4 gap-3">

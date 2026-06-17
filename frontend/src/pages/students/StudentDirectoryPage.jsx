@@ -1,12 +1,14 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { getCurrentAcademicYear } from '../../utils';
+
 import { motion, AnimatePresence } from 'framer-motion';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutGrid, List, Search, Plus, Loader2, RefreshCw,
-  Download, ChevronDown, FileText, FileSpreadsheet, File,
+  Download, ChevronDown, FileText, FileSpreadsheet, File, UserPlus
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { listStudents } from '../../services/firebase/studentsService';
+import { listStudents, addStudent } from '../../services/firebase/studentsService';
 import { CLASS_OPTIONS, SECTION_OPTIONS } from '../../lib/pdfUtils';
 
 // ─── Export helpers ────────────────────────────────────────────────────────────
@@ -144,6 +146,16 @@ export default function StudentDirectoryPage() {
   const [sec, setSec] = useState('');
   const [gender, setGender] = useState('');
   const [status, setStatus] = useState('ACTIVE');
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showPromote, setShowPromote] = useState(false);
+  const [promoteYear, setPromoteYear] = useState('2027-28');
+  const [promoteClass, setPromoteClass] = useState('');
+  const [promoteSection, setPromoteSection] = useState('');
+  const [promoting, setPromoting] = useState(false);
+
+  const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
 
   const load = async () => {
     setLoading(true);
@@ -155,15 +167,59 @@ export default function StudentDirectoryPage() {
   useEffect(() => { load(); }, []);
 
   const list = useMemo(() => all.filter((s) => {
+    const matchY  = (s.academicYear || '2026-27') === academicYear;
     const matchQ  = !q      || `${s.fullName} ${s.admissionNo}`.toLowerCase().includes(q.toLowerCase());
     const matchC  = !cls    || s.className === cls;
     const matchS  = !sec    || s.section   === sec;
     const matchG  = !gender || (s.gender || '').toLowerCase() === gender.toLowerCase();
     const matchSt = !status || s.status    === status;
-    return matchQ && matchC && matchS && matchG && matchSt;
-  }), [all, q, cls, sec, gender, status]);
+    return matchY && matchQ && matchC && matchS && matchG && matchSt;
+  }), [all, q, cls, sec, gender, status, academicYear]);
 
-  const exportPrefix = `Students_${cls || 'All'}_${sec || 'All'}_${status || 'All'}`;
+  const toggleSelect = (id) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const toggleAll = () => {
+    if (selectedIds.size === list.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(list.map(s => s.id)));
+  };
+
+  const handlePromote = async () => {
+    if (!promoteClass || !promoteSection) return toast.error('Please select target class and section');
+    if (selectedIds.size === 0) return toast.error('No students selected');
+    setPromoting(true);
+    try {
+      let count = 0;
+      for (const id of selectedIds) {
+        const student = all.find(s => s.id === id);
+        if (student) {
+          const { id: oldId, ...data } = student;
+          await addStudent({
+            ...data,
+            academicYear: promoteYear,
+            className: promoteClass,
+            section: promoteSection
+          });
+          count++;
+        }
+      }
+      toast.success(`Successfully promoted ${count} students to ${promoteYear}`);
+      setShowPromote(false);
+      setSelectedIds(new Set());
+      load();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to promote students');
+    } finally {
+      setPromoting(false);
+    }
+  };
+
+  const exportPrefix = `Students_${academicYear}_${cls || 'All'}_${sec || 'All'}_${status || 'All'}`;
 
   return (
     <div className="space-y-5" data-testid="student-directory-page">
@@ -211,7 +267,11 @@ export default function StudentDirectoryPage() {
       </div>
 
       {/* Filter bar */}
-      <div className="glass-morphism rounded-[2rem] p-4 grid grid-cols-2 md:grid-cols-5 gap-2 items-center">
+      <div className="glass-morphism rounded-[2rem] p-4 grid grid-cols-2 md:grid-cols-6 gap-2 items-center">
+        <select value={academicYear} onChange={(e) => { setAcademicYear(e.target.value); setSelectedIds(new Set()); }}
+          className="h-10 px-3 rounded-2xl border border-border bg-card text-sm font-bold">
+          {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
         <div className="md:col-span-2 flex items-center gap-2 px-3 h-10 rounded-2xl border border-border bg-card">
           <Search className="h-3.5 w-3.5 text-muted-foreground" />
           <input
@@ -245,6 +305,25 @@ export default function StudentDirectoryPage() {
         </select>
       </div>
 
+      {/* Action Bar */}
+      <AnimatePresence>
+        {selectedIds.size > 0 && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+            <div className="bg-primary text-primary-foreground rounded-2xl p-4 flex items-center justify-between">
+              <div className="font-bold text-sm">{selectedIds.size} student(s) selected</div>
+              <div className="flex gap-2">
+                <button onClick={() => setShowPromote(true)} className="h-9 px-4 rounded-xl bg-primary-foreground text-primary text-xs font-bold flex items-center gap-2 hover:bg-background">
+                  <UserPlus className="h-3.5 w-3.5" /> Promote Selected
+                </button>
+                <button onClick={() => setSelectedIds(new Set())} className="h-9 px-4 rounded-xl border border-primary-foreground/20 text-xs font-bold hover:bg-primary-foreground/10">
+                  Clear Selection
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Loading */}
       {loading && (
         <div className="flex justify-center py-16">
@@ -259,8 +338,11 @@ export default function StudentDirectoryPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-border bg-muted/40">
                 <tr>
+                  <th className="px-3 py-3 w-10 sticky left-0 bg-muted/40 z-10">
+                    <input type="checkbox" className="accent-indigo-500 h-4 w-4" checked={list.length > 0 && selectedIds.size === list.length} onChange={toggleAll} />
+                  </th>
                   {[
-                    { label: '#',             cls: 'w-10 sticky left-0 bg-muted/40' },
+                    { label: '#',             cls: 'w-10' },
                     { label: 'Full Name',      cls: 'min-w-[160px]' },
                     { label: 'DOB',            cls: 'min-w-[100px]' },
                     { label: 'Gender',         cls: 'min-w-[80px]'  },
@@ -284,12 +366,14 @@ export default function StudentDirectoryPage() {
                 {list.map((s, i) => (
                   <tr
                     key={s.id}
-                    className="border-b border-border last:border-0 hover:bg-muted/30 cursor-pointer transition-colors"
-                    onClick={() => navigate(`/dashboard/students/profile/${s.id}`)}
+                    className={`border-b border-border last:border-0 hover:bg-muted/30 transition-colors ${selectedIds.has(s.id) ? 'bg-primary/5' : ''}`}
                     data-testid={`dir-row-${s.id}`}
                   >
-                    <td className="px-3 py-2.5 text-muted-foreground text-xs sticky left-0 bg-card">{i + 1}</td>
-                    <td className="px-3 py-2.5 font-bold">
+                    <td className="px-3 py-2.5 sticky left-0 bg-card z-10 border-r border-border/50">
+                      <input type="checkbox" className="accent-indigo-500 h-4 w-4" checked={selectedIds.has(s.id)} onChange={() => toggleSelect(s.id)} />
+                    </td>
+                    <td className="px-3 py-2.5 text-muted-foreground text-xs" onClick={() => navigate(`/dashboard/students/profile/${s.id}`)}>{i + 1}</td>
+                    <td className="px-3 py-2.5 font-bold cursor-pointer" onClick={() => navigate(`/dashboard/students/profile/${s.id}`)}>
                       <div className="flex items-center gap-2">
                         {s.photoURL ? (
                           <img src={s.photoURL} alt="" className="h-7 w-7 rounded-lg object-cover flex-shrink-0" />
@@ -369,6 +453,49 @@ export default function StudentDirectoryPage() {
           )}
         </div>
       )}
+
+      {/* Promote Modal */}
+      <AnimatePresence>
+        {showPromote && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-card w-full max-w-md rounded-[2rem] shadow-2xl border border-border p-6">
+              <h2 className="font-display font-black text-2xl tracking-tighter uppercase text-primary">Promote Students</h2>
+              <p className="text-sm text-muted-foreground mt-1">Promote {selectedIds.size} student(s) to a new academic year.</p>
+              
+              <div className="space-y-4 mt-6">
+                <div>
+                  <label className="label-eyebrow text-muted-foreground">Target Academic Year</label>
+                  <select value={promoteYear} onChange={e => setPromoteYear(e.target.value)} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm font-bold">
+                    {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label-eyebrow text-muted-foreground">Target Class</label>
+                  <select value={promoteClass} onChange={e => setPromoteClass(e.target.value)} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm font-bold">
+                    <option value="">Select Class</option>
+                    {CLASS_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label-eyebrow text-muted-foreground">Target Section</label>
+                  <select value={promoteSection} onChange={e => setPromoteSection(e.target.value)} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm font-bold">
+                    <option value="">Select Section</option>
+                    {SECTION_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-8">
+                <button onClick={() => setShowPromote(false)} className="flex-1 h-11 rounded-2xl bg-muted label-eyebrow hover:bg-muted/80">Cancel</button>
+                <button onClick={handlePromote} disabled={promoting} className="flex-1 h-11 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50">
+                  {promoting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm Promotion'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

@@ -17,7 +17,7 @@ dependencies {
     implementation project(':capacitor-network')
     implementation project(':capacitor-splash-screen')
     implementation project(':capacitor-status-bar')
-
+    implementation "com.razorpay:checkout:1.6.19"
 }
 
 

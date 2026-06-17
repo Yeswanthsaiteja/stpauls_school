@@ -9,6 +9,7 @@ import { formatCurrency, exportToCSV } from '../../lib/utils';
 import { downloadElementAsPDF } from '../../lib/pdfUtils';
 import { toast } from 'sonner';
 import { useTenant } from '../../contexts/TenantContext';
+import ReceiptTemplate from '../../components/ReceiptTemplate';
 
 const CATEGORIES = ['Rent', 'Utilities', 'Maintenance', 'Salaries', 'Supplies', 'Events', 'Other'];
 const PIE_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#94a3b8'];
@@ -187,51 +188,7 @@ export default function Ledger() {
 
       {/* HIDDEN RECEIPT TEMPLATE FOR DOWNLOADING */}
       {receiptToDownload && (
-        <div className="absolute left-[-9999px] top-[-9999px]">
-          <div id="ledger-receipt-preview" className="bg-white text-slate-900 p-6 w-[400px]">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="h-10 w-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center">
-                  <span className="font-bold">R</span>
-                </div>
-                <div>
-                  <div className="font-display font-black text-lg tracking-tight">{tenant?.name || 'School'}</div>
-                  <div className="text-[10px] text-slate-500">Fee Receipt</div>
-                </div>
-              </div>
-              <div className="text-right text-[10px]">
-                <div className="font-mono font-bold">{receiptToDownload.receiptNo || '—'}</div>
-                <div className="text-slate-500">{new Date(receiptToDownload.paymentDate || Date.now()).toLocaleDateString('en-IN')}</div>
-              </div>
-            </div>
-            <div className="mt-4 space-y-1.5 text-xs">
-              <div className="flex justify-between"><span className="text-slate-500">Student</span><span className="font-bold">{receiptToDownload.studentName || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Father's Name</span><span className="font-bold">{receiptToDownload.fatherName || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Admission No.</span><span className="font-mono font-bold">{receiptToDownload.admissionNo || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Class</span><span className="font-bold">{receiptToDownload.className}-{receiptToDownload.section}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Category</span><span className="font-bold">{receiptToDownload.feeName || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Mode</span><span className="font-bold">{receiptToDownload.paymentMethod || 'Online'}</span></div>
-            </div>
-            {receiptToDownload.termAllocations && receiptToDownload.termAllocations.length > 0 && (
-              <div className="mt-3 pt-2 border-t border-slate-100 space-y-1">
-                {receiptToDownload.termAllocations.map((a, i) => (
-                  <div key={i} className="flex justify-between text-[10px]">
-                    <span className="text-slate-500">{a.termName}</span>
-                    <span className="font-bold">{formatCurrency(a.amount)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="mt-4 p-3 rounded-xl bg-indigo-50 flex items-center justify-between">
-              <span className="text-xs text-slate-500">Amount Paid</span>
-              <span className="font-display font-black text-2xl tracking-tighter text-indigo-700">{formatCurrency(receiptToDownload.amount || 0)}</span>
-            </div>
-            <div className="mt-6 flex items-end justify-between text-[10px] text-slate-500">
-              <span>Cashier · Admin</span>
-              <span>Authorised Signatory</span>
-            </div>
-          </div>
-        </div>
+        <ReceiptTemplate receiptData={receiptToDownload} id="ledger-receipt-preview" />
       )}
     </div>
   );

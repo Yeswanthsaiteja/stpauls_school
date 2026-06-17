@@ -1,13 +1,14 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { CalendarCheck, UserCog, BedDouble } from 'lucide-react';
+import { CalendarCheck, UserCog, BedDouble, Fingerprint } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function AttendanceModule() {
   const navigate = useNavigate();
   const data = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d, i) => ({ day: d, present: 86 + Math.round(Math.cos(i)*4 + Math.random()*6), absent: 6 + Math.round(Math.random()*4) }));
   const cards = [
+    { icon: Fingerprint,   label: 'Employee Attendance', sub: 'Biometric · Present/Absent/Late', color: 'from-rose-500 to-orange-500', to: '/dashboard/employee-attendance' },
     { icon: CalendarCheck, label: 'Student Attendance (Manual)', sub: 'Daily P/A/L', color: 'from-indigo-500 to-violet-500', to: '/dashboard/student-attendance' },
     { icon: UserCog, label: 'RFID Upload', sub: 'CSV bulk + WhatsApp', color: 'from-fuchsia-500 to-purple-500', to: '/dashboard/rfid-attendance' },
     { icon: BedDouble, label: 'Leave Management', sub: 'Apply · approve', color: 'from-amber-500 to-orange-500', to: '/dashboard/leave-management' },

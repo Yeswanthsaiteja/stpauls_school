@@ -4,11 +4,13 @@ import { toast } from 'sonner';
 import { listBooks, issueBook, listIssues, returnBook } from '../../services/firebase/libraryService';
 import { listClasses } from '../../services/firebase/academicService';
 import { listStudents } from '../../services/firebase/studentsService';
+import { getCurrentAcademicYear } from '../../utils';
 
 export default function StudentIssue() {
   const [activeTab, setActiveTab] = useState('ISSUE'); // ISSUE, STATUS
   
   // Issue flow state
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
   const [classes, setClasses] = useState([]);
   const [selectedClass, setSelectedClass] = useState('');
   const [students, setStudents] = useState([]);
@@ -33,11 +35,11 @@ export default function StudentIssue() {
   useEffect(() => {
     if (!selectedClass) { setStudents([]); return; }
     setLoading(true);
-    listStudents({ className: selectedClass }).then(st => {
+    listStudents({ className: selectedClass, academicYear }).then(st => {
       setStudents(st);
       setLoading(false);
     });
-  }, [selectedClass]);
+  }, [selectedClass, academicYear]);
 
   const handleReturn = async (issueId, bookId) => {
     if (!window.confirm("Mark this book as returned?")) return;
@@ -55,7 +57,17 @@ export default function StudentIssue() {
 
       {activeTab === 'ISSUE' && (
         <div className="space-y-5">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <select
+              value={academicYear}
+              onChange={(e) => setAcademicYear(e.target.value)}
+              className="w-48 px-4 py-2.5 bg-muted/50 border border-border rounded-2xl focus:ring-2 focus:ring-primary outline-none text-sm"
+            >
+              <option value="2024-25">2024-25</option>
+              <option value="2025-26">2025-26</option>
+              <option value="2026-27">2026-27</option>
+              <option value="2027-28">2027-28</option>
+            </select>
             <select
               value={selectedClass} onChange={e => setSelectedClass(e.target.value)}
               className="w-64 px-4 py-2.5 bg-muted/50 border border-border rounded-2xl focus:ring-2 focus:ring-primary outline-none text-sm"

@@ -1,4 +1,7 @@
 import React, { useEffect, useState, createContext, useContext, useCallback, useMemo } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { getCurrentAcademicYear } from '../utils';
+
 import { motion, AnimatePresence } from 'framer-motion';
 import { Routes, Route, useNavigate, NavLink } from 'react-router-dom';
 import OnlineExams from './OnlineExams';
@@ -14,6 +17,7 @@ import {
 import { downloadElementAsPDF } from '../lib/pdfUtils';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import ReceiptTemplate from '../components/ReceiptTemplate';
 import { useAuth } from '../contexts/AuthContext';
 import { getStudent } from '../services/firebase/studentsService';
 import { listTransactions, listFeeCategories, allocatePayment, computeTermPaid } from '../services/firebase/financeService';
@@ -77,9 +81,11 @@ const Announcements = () => {
         if (a.targetRole !== 'ALL' && a.targetRole !== 'PARENT') return false;
         
         // If it targets a specific class, must match activeChild
-        if (a.targetRole === 'PARENT' && a.targetClass) {
+        if (a.targetRole === 'PARENT') {
           if (!activeChild) return false;
-          if (a.targetClass !== activeChild.className) return false;
+          // Only show announcements that match the child's academic year (or if none was specified on old announcements)
+          if (a.academicYear && a.academicYear !== activeChild.academicYear) return false;
+          if (a.targetClass && a.targetClass !== activeChild.className) return false;
           if (a.targetSection && a.targetSection !== activeChild.section) return false;
         }
         
@@ -330,11 +336,18 @@ const Finance = () => {
         name: "St. Paul's High School",
         description: `Fee Payment — ${cat?.name || 'Online'}`,
         order_id: orderId || undefined,
-        method: { upi: true, card: false, netbanking: false, wallet: false, emi: false },
-        prefill: { contact: (profile?.phone || '').replace(/\D/g, '').slice(-10), name: profile?.fullName },
+        prefill: { contact: (profile?.phone || '').replace(/\D/g, '').slice(-10), name: profile?.fullName, method: 'upi' },
+        config: {
+          display: {
+            blocks: { upi: { name: 'Pay via UPI', instruments: [{ method: 'upi' }] } },
+            sequence: ['block.upi'],
+            preferences: { show_default_blocks: false }
+          }
+        },
         theme: { color: '#4f46e5' },
         handler: async (response) => {
           try {
+            const pid = typeof response === 'string' ? response : response.razorpay_payment_id;
             await addDoc(collection(db, 'transactions'), {
               studentId,
               studentName: childName,
@@ -344,7 +357,7 @@ const Finance = () => {
               status: 'PAID',
               paymentMode: 'UPI',
               paymentMethod: 'ONLINE',
-              paymentId: response.razorpay_payment_id,
+              paymentId: pid,
               receiptNo,
               termAllocations: allocations,
               tenantId: process.env.REACT_APP_TENANT_ID || 'stpauls',
@@ -369,8 +382,38 @@ const Finance = () => {
         return;
       }
 
-      const rzp = new window.Razorpay(options);
-      rzp.open();
+      if (Capacitor.isNativePlatform()) {
+        // Native app: create a Razorpay payment link and open in external browser
+        try {
+          const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
+          const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+          const res = await fetch(`${backendUrl}/api/payments/create-payment-link`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+              amount: amt * 100,
+              currency: 'INR',
+              studentId,
+              studentName: childName,
+              feeName: cat?.name || 'Fee Payment',
+              phone: (profile?.phone || '').replace(/\D/g, '').slice(-10),
+              description: `Fee Payment — ${cat?.name || 'Online'} for ${childName}`,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || 'Failed to create payment link');
+          toast.success('Opening payment page...');
+          // Open in system browser — works natively on Android
+          window.open(data.shortUrl, '_system');
+          setPaying(false);
+        } catch (e) {
+          setPaying(false);
+          toast.error('Payment failed: ' + e.message);
+        }
+      } else {
+        const rzp = new window.Razorpay(options);
+        rzp.open();
+      }
     } catch (e) {
       toast.error('Payment failed: ' + e.message);
     }
@@ -523,51 +566,7 @@ const Finance = () => {
 
       {/* HIDDEN RECEIPT TEMPLATE FOR DOWNLOADING */}
       {receiptToDownload && (
-        <div className="absolute left-[-9999px] top-[-9999px]">
-          <div id="parent-receipt-preview" className="bg-white text-slate-900 p-6 w-[400px]">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="h-10 w-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center">
-                  <Receipt className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="font-display font-black text-lg tracking-tight">St. Paul's High School</div>
-                  <div className="text-[10px] text-slate-500">Fee Receipt</div>
-                </div>
-              </div>
-              <div className="text-right text-[10px]">
-                <div className="font-mono font-bold">{receiptToDownload.receiptNo || '—'}</div>
-                <div className="text-slate-500">{new Date(receiptToDownload.paymentDate || receiptToDownload.paidAt?.toDate() || Date.now()).toLocaleDateString('en-IN')}</div>
-              </div>
-            </div>
-            <div className="mt-4 space-y-1.5 text-xs">
-              <div className="flex justify-between"><span className="text-slate-500">Student</span><span className="font-bold">{receiptToDownload.studentName || activeChild?.name || profile?.linkedStudentName || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Father's Name</span><span className="font-bold">{receiptToDownload.fatherName || activeChild?.fatherName || profile?.fatherName || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Admission No.</span><span className="font-mono font-bold">{receiptToDownload.admissionNo || activeChild?.admissionNo || profile?.linkedStudentAdmissionNo || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Class</span><span className="font-bold">{receiptToDownload.className || activeChild?.className || profile?.linkedStudentClass || '—'} {receiptToDownload.section || activeChild?.section || profile?.linkedStudentSection ? ` - ${receiptToDownload.section || activeChild?.section || profile?.linkedStudentSection}` : ''}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Category</span><span className="font-bold">{receiptToDownload.feeName || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Mode</span><span className="font-bold">{receiptToDownload.paymentMode || receiptToDownload.paymentMethod || 'Online'}</span></div>
-            </div>
-            {receiptToDownload.termAllocations && receiptToDownload.termAllocations.length > 0 && (
-              <div className="mt-3 pt-2 border-t border-slate-100 space-y-1">
-                {receiptToDownload.termAllocations.map((a, i) => (
-                  <div key={i} className="flex justify-between text-[10px]">
-                    <span className="text-slate-500">{a.termName}</span>
-                    <span className="font-bold">₹{Number(a.amount).toLocaleString('en-IN')}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="mt-4 p-3 rounded-xl bg-indigo-50 flex items-center justify-between">
-              <span className="text-xs text-slate-500">Amount Paid</span>
-              <span className="font-display font-black text-2xl tracking-tighter text-indigo-700">₹{(receiptToDownload.amount || 0).toLocaleString('en-IN')}</span>
-            </div>
-            <div className="mt-6 flex items-end justify-between text-[10px] text-slate-500">
-              <span>Online Payment Gateway</span>
-              <span>System Generated</span>
-            </div>
-          </div>
-        </div>
+        <ReceiptTemplate receiptData={receiptToDownload} id="parent-receipt-preview" />
       )}
     </SimplePage>
   );
@@ -688,8 +687,9 @@ const ParentDiaryPage = () => {
     });
   }, [studentClass]);
 
-  // Filter by section if available
+  // Filter by academicYear, class, and section
   const visible = entries.filter(d =>
+    (!activeChild?.academicYear || !d.academicYear || d.academicYear === activeChild.academicYear) &&
     (!studentClass || d.className === studentClass) &&
     (!studentSection || d.section === studentSection || !d.section)
   );
@@ -974,22 +974,38 @@ function WelcomeSplash({ name, onDone }) {
 function ParentHome() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const { activeChild, linkedStudents, childIdx, setChildIdx } = useParentChild();
+  const { activeChild } = useParentChild();
   const [child, setChild] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [announcements, setAnnouncements] = useState([]);
 
   useEffect(() => {
-    const loadChild = async () => {
+    const loadData = async () => {
       const studentId = activeChild?.id;
       if (studentId) {
         const s = await getStudent(studentId);
         setChild(s);
       }
+      
+      // Load top announcements
+      listAnnouncements().then(data => {
+        const filtered = data.filter(a => {
+          if (a.targetRole !== 'ALL' && a.targetRole !== 'PARENT') return false;
+          if (a.targetRole === 'PARENT' && a.targetClass) {
+            if (!activeChild) return false;
+            if (a.targetClass !== activeChild.className) return false;
+            if (a.targetSection && a.targetSection !== activeChild.section) return false;
+          }
+          return true;
+        });
+        setAnnouncements(filtered.slice(0, 3));
+      }).catch(e => console.error(e));
+
       setLoading(false);
     };
-    loadChild();
-  }, [activeChild?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    loadData();
+  }, [activeChild]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!profile) return;
@@ -1059,6 +1075,43 @@ function ParentHome() {
                 </div>
               </div>
             </div>
+
+            {/* Announcements Preview */}
+            <div className="glass-morphism rounded-[2rem] p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="label-eyebrow text-muted-foreground flex items-center gap-2">
+                  <Bell className="h-4 w-4 text-pink-500" /> Latest Announcements
+                </div>
+                <button onClick={() => navigate('announcements')} className="text-xs font-bold text-primary hover:underline">View All</button>
+              </div>
+              <div className="space-y-3">
+                {announcements.length === 0 && <div className="text-sm text-muted-foreground py-4">No recent announcements.</div>}
+                {announcements.map((a, i) => (
+                  <div key={a.id || i} className="p-4 rounded-2xl bg-muted/30 border border-border/50">
+                    <div className="flex items-center justify-between">
+                      <div className="font-bold text-sm text-foreground">{a.title}</div>
+                      <span className="label-eyebrow text-muted-foreground">{a.date}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{a.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Modules Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+              {MODULES.map((m, i) => (
+                <motion.button key={m.key} onClick={() => navigate(m.key)}
+                  whileHover={{ y: -4, scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                  className="flex flex-col items-center justify-center gap-3 p-5 rounded-3xl glass-morphism border border-border hover:border-primary/20 transition-colors">
+                  <div className={`h-14 w-14 rounded-2xl ${m.tint} grid place-items-center`}>
+                    <m.icon className="h-6 w-6" />
+                  </div>
+                  <span className="font-bold text-xs text-center">{m.label}</span>
+                </motion.button>
+              ))}
+            </div>
+
           </>
         )}
       </div>
@@ -1069,6 +1122,8 @@ function ParentHome() {
 // ─── Root router — owns the active-child state ────────────────────────────────
 export default function ParentDashboard() {
   const { profile } = useAuth();
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
 
   // Build linked students list from profile
   const linkedStudents = profile?.linkedStudents ||
@@ -1080,6 +1135,24 @@ export default function ParentDashboard() {
       admissionNo: profile.admissionNo,
     }] : []);
 
+  const [fullLinkedStudents, setFullLinkedStudents] = useState([]);
+  useEffect(() => {
+    Promise.all(linkedStudents.map(s => getStudent(s.id))).then(students => {
+      // Keep only students that exist and merge them with base profile data
+      const valid = students.filter(Boolean).map(s => ({
+        ...s,
+        name: s.fullName || s.name,
+      }));
+      setFullLinkedStudents(valid.length > 0 ? valid : linkedStudents);
+    });
+  }, [profile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Filter by academic year
+  const yearFilteredStudents = useMemo(() => {
+    if (fullLinkedStudents.length === 0) return [];
+    return fullLinkedStudents.filter(s => (s.academicYear || '2026-27') === academicYear);
+  }, [fullLinkedStudents, academicYear]);
+
   // Persist selected child index in localStorage so it survives navigation
   const [childIdx, setChildIdxState] = useState(() => {
     try { return Number(localStorage.getItem('stpauls_child_idx') || '0'); } catch { return 0; }
@@ -1090,26 +1163,41 @@ export default function ParentDashboard() {
     try { localStorage.setItem('stpauls_child_idx', String(idx)); } catch {}
   };
 
-  const activeChild = linkedStudents[childIdx] || linkedStudents[0] || null;
+  const activeChild = yearFilteredStudents[childIdx] || yearFilteredStudents[0] || null;
 
   return (
     <ParentChildContext.Provider value={{ activeChild, linkedStudents, childIdx, setChildIdx }}>
       <div className="flex flex-col h-full space-y-4">
         {/* GLOBAL MULTI-CHILD SWITCHER */}
-        {linkedStudents.length > 1 && (
-          <div className="flex items-center gap-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl sticky top-4 z-40 backdrop-blur-md">
-            <span className="label-eyebrow text-indigo-700 dark:text-indigo-300 ml-2">Viewing Child:</span>
-            <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
-              {linkedStudents.map((c, i) => (
-                <button key={c.id} onClick={() => setChildIdx(i)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all whitespace-nowrap ${childIdx === i ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/20' : 'bg-card border-border text-muted-foreground hover:bg-muted'}`}>
-                  <span className="font-bold text-sm">{c.name?.split(' ')[0] || 'Child'}</span>
-                  <span className="label-eyebrow text-[10px] opacity-70">({c.className}{c.section ? `-${c.section}` : ''})</span>
-                </button>
-              ))}
-            </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl sticky top-4 z-40 backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <span className="label-eyebrow text-indigo-700 dark:text-indigo-300 ml-2">Academic Year:</span>
+            <select value={academicYear} onChange={(e) => { setAcademicYear(e.target.value); setChildIdx(0); }} className="h-9 px-3 rounded-xl border border-indigo-500/30 bg-card text-sm font-bold text-indigo-700 dark:text-indigo-300">
+              {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
           </div>
-        )}
+          
+          {yearFilteredStudents.length > 0 && (
+            <div className="flex items-center gap-3">
+              <span className="label-eyebrow text-indigo-700 dark:text-indigo-300">Viewing Child:</span>
+              <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
+                {yearFilteredStudents.map((c, i) => (
+                  <button key={c.id} onClick={() => setChildIdx(i)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all whitespace-nowrap ${childIdx === i ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/20' : 'bg-card border-border text-muted-foreground hover:bg-muted'}`}>
+                    <span className="font-bold text-sm">{c.name?.split(' ')[0] || 'Child'}</span>
+                    <span className="label-eyebrow text-[10px] opacity-70">({c.className}{c.section ? `-${c.section}` : ''})</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {yearFilteredStudents.length === 0 && (
+            <div className="text-sm text-indigo-600 font-bold px-4">
+              No records linked for {academicYear}
+            </div>
+          )}
+        </div>
 
         <div className="flex-1">
           <Routes>

@@ -19,6 +19,22 @@ class CreateOrderRequest(BaseModel):
     notes: Optional[dict] = {}
 
 
+class CreatePaymentLinkRequest(BaseModel):
+    amount: int          # in paise
+    currency: str = "INR"
+    studentId: str
+    studentName: str
+    feeName: str
+    phone: Optional[str] = ""
+    description: Optional[str] = ""
+
+
+class CreatePaymentLinkResponse(BaseModel):
+    paymentLinkId: str
+    shortUrl: str
+    amount: int
+
+
 class CreateOrderResponse(BaseModel):
     orderId: str
     amount: int
@@ -63,6 +79,45 @@ async def create_order(payload: CreateOrderRequest, user=Depends(require_auth)):
         )
     except Exception as e:
         logger.exception("Razorpay order creation failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/create-payment-link", response_model=CreatePaymentLinkResponse)
+async def create_payment_link(payload: CreatePaymentLinkRequest, user=Depends(require_auth)):
+    """Create a Razorpay Payment Link — used by the mobile app (no WebView checkout support)."""
+    key_id = os.environ.get("RAZORPAY_KEY_ID")
+    key_secret = os.environ.get("RAZORPAY_KEY_SECRET")
+    if not key_id or not key_secret:
+        raise HTTPException(status_code=503, detail="Razorpay not configured.")
+
+    try:
+        import razorpay
+        client = razorpay.Client(auth=(key_id, key_secret))
+        link_data = {
+            "amount": payload.amount,
+            "currency": payload.currency,
+            "accept_partial": False,
+            "description": payload.description or f"Fee: {payload.feeName} — {payload.studentName}",
+            "customer": {
+                "name": payload.studentName,
+                "contact": payload.phone or "",
+            },
+            "notify": {"sms": False, "email": False},
+            "reminder_enable": False,
+            "notes": {
+                "studentId": payload.studentId,
+                "feeName": payload.feeName,
+            },
+            "upi_link": True,  # Generate UPI-only link
+        }
+        link = client.payment_link.create(link_data)
+        return CreatePaymentLinkResponse(
+            paymentLinkId=link["id"],
+            shortUrl=link["short_url"],
+            amount=link["amount"],
+        )
+    except Exception as e:
+        logger.exception("Razorpay payment link creation failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

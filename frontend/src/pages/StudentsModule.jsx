@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { listStudents, addStudent, searchStudents } from '../services/firebase/studentsService';
 import { getWhatsAppUrl } from '../lib/utils';
 import { toast } from 'sonner';
+import { uploadToStorage } from '../lib/storageUtils';
 
 const STEPS = ['personal', 'contact', 'parentInfo', 'academic', 'photo'];
 
@@ -93,12 +94,15 @@ function Landing() {
 function AdmissionForm() {
   const { t } = useTranslation();
   const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [photoFile, setPhotoFile] = useState(null);
   const [data, setData] = useState({ firstName: '', lastName: '', dateOfBirth: '', gender: 'Male', className: 'X', section: 'A', phoneNumber: '', fatherName: '', motherName: '' });
   const set = (k, v) => setData((d) => ({ ...d, [k]: v }));
   const navigate = useNavigate();
 
   const onPhoto = (file) => {
     if (!file) return;
+    setPhotoFile(file);
     const reader = new FileReader();
     reader.onload = (e) => set('photoURL', String(e.target.result || ''));
     reader.readAsDataURL(file);
@@ -106,9 +110,18 @@ function AdmissionForm() {
 
   const submit = async () => {
     if (!data.firstName || !data.lastName) return toast.error('Name required');
+    if (saving) return; setSaving(true);
     try {
+      let finalPhotoURL = data.photoURL;
+      if (photoFile) {
+        const ext = photoFile.name.split('.').pop() || 'jpg';
+        const path = `student-photos/QUICK_${Date.now()}.${ext}`;
+        finalPhotoURL = await uploadToStorage(photoFile, path);
+      }
+
       const result = await addStudent({
         ...data,
+        photoURL: finalPhotoURL,
         fullName: `${data.firstName} ${data.lastName}`,
         status: 'ACTIVE',
         admissionDate: new Date().toISOString(),
@@ -117,6 +130,8 @@ function AdmissionForm() {
       navigate('..');
     } catch (e) {
       toast.error('Failed to save admission. Please try again.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -206,7 +221,9 @@ function AdmissionForm() {
         {step < STEPS.length - 1 ? (
           <button onClick={() => setStep((s) => s + 1)} className="px-5 h-11 rounded-2xl bg-primary text-primary-foreground label-eyebrow" data-testid="adm-next-btn">Next →</button>
         ) : (
-          <button onClick={submit} className="px-5 h-11 rounded-2xl bg-emerald-500 text-white label-eyebrow" data-testid="adm-submit-btn">Submit Admission</button>
+          <button onClick={submit} disabled={saving} className="px-5 h-11 rounded-2xl bg-emerald-500 text-white label-eyebrow disabled:opacity-60" data-testid="adm-submit-btn">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Submit Admission'}
+          </button>
         )}
       </div>
     </div>

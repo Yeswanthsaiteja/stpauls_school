@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { getCurrentAcademicYear } from '../utils';
+
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bus, MapPin, Clock, Users, Navigation, Plus, RefreshCw, X, ChevronRight } from 'lucide-react';
 import { listRoutes, addRoute, updateRoute } from '../services/firebase/transportService';
@@ -14,11 +16,18 @@ export default function Transport() {
   const [selectedRoute, setSelectedRoute] = useState(null); // route object for detail panel
   const [routeStudents, setRouteStudents] = useState([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
+  const [allStudents, setAllStudents] = useState([]);
 
   const load = async () => {
     setLoading(true);
-    const data = await listRoutes();
+    const [data, stu] = await Promise.all([
+      listRoutes(),
+      import('../services/firebase/studentsService').then(m => m.listStudents({ status: 'ACTIVE' }))
+    ]);
     setRoutes(data);
+    setAllStudents(stu);
     setLoading(false);
   };
 
@@ -53,7 +62,9 @@ export default function Transport() {
     setLoadingStudents(true);
     try {
       const allocs = await listAllocations({ routeId: route.id });
-      setRouteStudents(allocs);
+      // Filter allocations to only show students belonging to the selected academic year
+      const activeStudentIds = new Set(allStudents.filter(s => (s.academicYear || '2026-27') === academicYear).map(s => s.id));
+      setRouteStudents(allocs.filter(a => activeStudentIds.has(a.studentId)));
     } catch {
       setRouteStudents([]);
     } finally {
@@ -74,6 +85,9 @@ export default function Transport() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Transport</h1>
         <div className="flex items-center gap-2">
+          <select value={academicYear} onChange={(e) => { setAcademicYear(e.target.value); setSelectedRoute(null); }} className="h-9 px-3 rounded-xl border border-border bg-card text-sm font-bold">
+            {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
           <button onClick={load} className="h-9 w-9 rounded-xl bg-muted grid place-items-center hover:bg-muted/80" title="Refresh">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>

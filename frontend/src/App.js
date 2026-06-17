@@ -58,6 +58,7 @@ import ExamSetupPage from './pages/academic/ExamSetupPage';
 import Diary from './pages/Diary';
 import ExamTimetablePage from './pages/ExamTimetablePage';
 import TeacherMessaging from './pages/TeacherMessaging';
+import EmployeeAttendance from './pages/EmployeeAttendance';
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -124,6 +125,7 @@ function App() {
                   <Route path="student-attendance" element={<StudentAttendance />} />
                   <Route path="attendance-status" element={<AttendanceStatus />} />
                   <Route path="rfid-attendance" element={<RfidAttendance />} />
+                  <Route path="employee-attendance" element={<EmployeeAttendance />} />
                   <Route path="leave-management" element={<LeaveManagement />} />
                   <Route path="holidays" element={<HolidaysCalendar />} />
                   <Route path="bulk-import" element={<BulkImport />} />

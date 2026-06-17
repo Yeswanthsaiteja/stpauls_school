@@ -12,6 +12,8 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { getCurrentAcademicYear } from '../utils';
+
 import { motion } from 'framer-motion';
 import {
   Download, Printer, Upload, ChevronDown, Save, Eye, Settings,
@@ -24,10 +26,10 @@ import { saveAs } from 'file-saver';
 import { listStudents } from '../services/firebase/studentsService';
 import { listClasses } from '../services/firebase/academicService';
 import { loadIdCardConfig, saveIdCardConfig } from '../services/firebase/idCardService';
+import { uploadToStorage } from '../lib/storageUtils';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const ACADEMIC_YEAR = '2026-27';
 const PRE_PRIMARY = ['Nursery', 'LKG', 'UKG'];
 
 // Available themes per class type — each theme has a default RGB accent color
@@ -141,11 +143,15 @@ function IdCard({
       <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8, position: 'relative', zIndex: 2 }}>
         <label style={{ cursor: readOnly ? 'default' : 'pointer', position: 'relative' }}>
           {!readOnly && (
-            <input type="file" accept="image/*" onChange={e => {
+            <input type="file" accept="image/*" onChange={async e => {
               const f = e.target.files?.[0]; if (!f) return;
-              const r = new FileReader();
-              r.onload = ev => onPhotoChange?.(String(ev.target.result));
-              r.readAsDataURL(f);
+              try {
+                const ext = f.name.split('.').pop() || 'jpg';
+                const url = await uploadToStorage(f, `student-photos/${student.id}_${Date.now()}.${ext}`);
+                onPhotoChange?.(url);
+              } catch (err) {
+                console.error(err);
+              }
             }} style={{ display: 'none' }} />
           )}
           <div style={{
@@ -273,6 +279,9 @@ function IdCard({
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function IDCardStudio() {
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
+
   // ── Filters ──────────────────────────────────────────────────────────────────
   const [allClasses, setAllClasses] = useState([]);
   const [selectedClass, setSelectedClass] = useState('');
@@ -343,12 +352,13 @@ export default function IDCardStudio() {
     setLoadingStudents(true);
     Promise.all([
       listStudents({ className: selectedClass, section: selectedSection, status: 'ACTIVE' }),
-      loadIdCardConfig(ACADEMIC_YEAR, selectedClass, selectedSection),
+      loadIdCardConfig(academicYear, selectedClass, selectedSection),
     ]).then(([studs, saved]) => {
-      setStudents(studs);
+      const filtered = studs.filter(s => (s.academicYear || '2026-27') === academicYear);
+      setStudents(filtered);
       const isPP = PRE_PRIMARY.includes(selectedClass);
       const initial = {};
-      studs.forEach((s) => {
+      filtered.forEach((s) => {
         const sv = saved?.assignments?.[s.id] || {};
         initial[s.id] = {
           theme: sv.theme || (isPP ? 'pink' : 'blue'),
@@ -366,7 +376,7 @@ export default function IDCardStudio() {
       setTab('students');
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedClass, selectedSection]);
+  }, [selectedClass, selectedSection, academicYear]);
 
   const isPrePrimary = PRE_PRIMARY.includes(selectedClass);
   const availableThemes = isPrePrimary ? ['pink'] : ['red', 'green', 'blue', 'yellow'];
@@ -382,18 +392,13 @@ export default function IDCardStudio() {
     if (!selectedClass || !selectedSection) return toast.error('Select class and section first');
     if (saving) return; setSaving(true);
     try {
-      await saveIdCardConfig(ACADEMIC_YEAR, selectedClass, selectedSection, cardData, { ...schoolConfig, themeColors });
+      await saveIdCardConfig(academicYear, selectedClass, selectedSection, cardData, { ...schoolConfig, themeColors });
       toast.success('Saved!');
     } catch (e) { toast.error('Save failed: ' + e.message); }
     finally { setSaving(false); }
   };
 
-  // ── File readers ──────────────────────────────────────────────────────────────
-  const readFile = (file) => new Promise((res) => {
-    const r = new FileReader();
-    r.onload = (e) => res(String(e.target.result));
-    r.readAsDataURL(file);
-  });
+  // ── File helpers ──────────────────────────────────────────────────────────────
 
   // ── ZIP Download ──────────────────────────────────────────────────────────────
   const handleDownloadZip = async () => {
@@ -426,7 +431,7 @@ export default function IDCardStudio() {
       }
 
       const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, `IDCards_${selectedClass}_${selectedSection}_${ACADEMIC_YEAR}.zip`);
+      saveAs(content, `IDCards_${selectedClass}_${selectedSection}_${academicYear}.zip`);
       toast.success('ZIP downloaded!');
     } catch (e) {
       console.error(e);
@@ -475,7 +480,7 @@ export default function IDCardStudio() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-display font-black text-3xl tracking-tighter uppercase">ID Card Studio</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Academic Year: <strong>{ACADEMIC_YEAR}</strong></p>
+          <p className="text-sm text-muted-foreground mt-0.5">Manage and print student ID cards</p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
           {configLoaded && (
@@ -503,9 +508,15 @@ export default function IDCardStudio() {
       {/* ── Filter row ── */}
       <div className="glass-morphism rounded-[2rem] p-4">
         <div className="flex flex-wrap gap-3 items-end">
-          <div>
+          <div className="flex-1 min-w-[140px]">
             <div className="text-xs font-bold text-muted-foreground mb-1.5">Academic Year</div>
-            <div className="h-10 px-4 rounded-xl bg-primary/10 text-primary font-bold flex items-center text-sm">{ACADEMIC_YEAR}</div>
+            <div className="relative">
+              <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)}
+                className="w-full h-10 pl-3 pr-8 rounded-xl border border-border bg-card text-sm appearance-none cursor-pointer">
+                {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <ChevronDown className="absolute right-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+            </div>
           </div>
 
           <div className="flex-1 min-w-[140px]">
@@ -735,7 +746,12 @@ export default function IDCardStudio() {
                     <img src={schoolConfig.logoDataUrl} alt="logo preview" className="h-16 max-w-[200px] object-contain rounded-lg border border-border" />
                   )}
                   <label className="cursor-pointer">
-                    <input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; setSchoolConfig((sc) => ({ ...sc, logoDataUrl: '' })); const url = await readFile(f); setSchoolConfig((sc) => ({ ...sc, logoDataUrl: url })); }} className="hidden" />
+                    <input type="file" accept="image/*" onChange={async (e) => { 
+                      const f = e.target.files?.[0]; if (!f) return; 
+                      const ext = f.name.split('.').pop() || 'png';
+                      const url = await uploadToStorage(f, `school-config/logo_${Date.now()}.${ext}`); 
+                      setSchoolConfig((sc) => ({ ...sc, logoDataUrl: url })); 
+                    }} className="hidden" />
                     <div className="h-10 px-4 rounded-xl border-2 border-dashed border-border hover:border-primary flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
                       <Upload className="h-3.5 w-3.5" />{schoolConfig.logoDataUrl ? 'Change Image' : 'Upload Logo Image'}
                     </div>
@@ -764,7 +780,12 @@ export default function IDCardStudio() {
                     <div className="h-12 w-24 border border-dashed border-border rounded flex items-center justify-center text-[10px] text-muted-foreground">No signature</div>
                   )}
                   <label className="cursor-pointer">
-                    <input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await readFile(f); setSchoolConfig((sc) => ({ ...sc, signatureDataUrl: url })); }} className="hidden" />
+                    <input type="file" accept="image/*" onChange={async (e) => { 
+                      const f = e.target.files?.[0]; if (!f) return; 
+                      const ext = f.name.split('.').pop() || 'png';
+                      const url = await uploadToStorage(f, `school-config/sig_${Date.now()}.${ext}`); 
+                      setSchoolConfig((sc) => ({ ...sc, signatureDataUrl: url })); 
+                    }} className="hidden" />
                     <div className="h-9 px-4 rounded-xl border-2 border-dashed border-border hover:border-primary flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
                       <Upload className="h-3.5 w-3.5" />{schoolConfig.signatureDataUrl ? 'Change Signature' : 'Upload Signature'}
                     </div>

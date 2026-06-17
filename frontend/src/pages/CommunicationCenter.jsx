@@ -11,6 +11,7 @@ import { listClasses } from '../services/firebase/academicService';
 import { addNotification } from '../services/firebase/notificationsService';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
+import { getCurrentAcademicYear } from '../utils';
 
 const TARGET_ROLES = ['ALL', 'STAFF', 'PARENT', 'STUDENT'];
 
@@ -27,6 +28,7 @@ export default function CommunicationCenter() {
   const [sending, setSending] = useState(false);
   const [annForm, setAnnForm] = useState({ title: '', description: '', targetRole: 'ALL', targetClass: '', targetSection: '' });
   const [classes, setClasses] = useState([]);
+  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
 
   useEffect(() => {
     listAnnouncements().then((data) => { setAnnList(data); setAnnLoading(false); });
@@ -37,13 +39,14 @@ export default function CommunicationCenter() {
     if (!annForm.title) return toast.error('Title required');
     setSending(true);
     try {
-      const row = await addAnnouncement({ ...annForm, postedBy: profile?.fullName || 'Admin' });
+      const row = await addAnnouncement({ ...annForm, academicYear, postedBy: profile?.fullName || 'Admin' });
       if (row) {
         setAnnList((l) => [row, ...l]);
         
         // If targeted at PARENT, send individual notifications to parents of those students
-        if (annForm.targetRole === 'PARENT') {
-          const allStudents = await listStudents({ status: 'ACTIVE' });
+        // If targeted at PARENT or STUDENT, send individual notifications
+        if (annForm.targetRole === 'PARENT' || annForm.targetRole === 'STUDENT') {
+          const allStudents = await listStudents({ status: 'ACTIVE', academicYear });
           const targetStudents = allStudents.filter(s => 
             (!annForm.targetClass || s.className === annForm.targetClass) &&
             (!annForm.targetSection || s.section === annForm.targetSection)
@@ -175,6 +178,7 @@ export default function CommunicationCenter() {
                         <span className="label-eyebrow bg-primary/10 text-primary px-2.5 py-1 rounded-full">
                           {a.targetRole}
                           {a.targetClass ? ` · ${a.targetClass}${a.targetSection ? `-${a.targetSection}` : ''}` : ''}
+                          {a.targetRole === 'PARENT' || a.targetRole === 'STUDENT' ? ` (${academicYear})` : ''}
                         </span>
                       </div>
                       <p className="text-sm text-muted-foreground">{a.description}</p>
@@ -212,7 +216,17 @@ export default function CommunicationCenter() {
             </div>
             
             {(annForm.targetRole === 'PARENT' || annForm.targetRole === 'STUDENT') && (
-              <div className="grid grid-cols-2 gap-3">
+              <>
+                <div>
+                  <label className="label-eyebrow text-muted-foreground">Academic Year</label>
+                  <select value={academicYear} onChange={(e) => setAcademicYear(e.target.value)} className="mt-1 w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm">
+                    <option value="2024-25">2024-25</option>
+                    <option value="2025-26">2025-26</option>
+                    <option value="2026-27">2026-27</option>
+                    <option value="2027-28">2027-28</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label-eyebrow text-muted-foreground">Class (Optional)</label>
                   <select value={annForm.targetClass} onChange={(e) => setAnnForm({ ...annForm, targetClass: e.target.value })} className="mt-1 w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm">
@@ -224,7 +238,8 @@ export default function CommunicationCenter() {
                   <label className="label-eyebrow text-muted-foreground">Section (Optional)</label>
                   <input value={annForm.targetSection} onChange={(e) => setAnnForm({ ...annForm, targetSection: e.target.value.toUpperCase() })} placeholder="e.g. A" className="mt-1 w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm uppercase" />
                 </div>
-              </div>
+                </div>
+              </>
             )}
 
             <button onClick={publishAnn} disabled={sending} data-testid="ann-send"
