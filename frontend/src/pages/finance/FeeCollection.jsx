@@ -8,6 +8,8 @@ import {
   CheckCircle2, Clock, AlertCircle, Minus,
 } from 'lucide-react';
 import { listStudents } from '../../services/firebase/studentsService';
+import { auth } from '../../lib/firebase';
+import { Capacitor } from '@capacitor/core';
 import {
   listTransactions, addTransaction, listFeeCategories,
   listConcessions, setConcession, listConcessionsV2, setConcessionV2,
@@ -262,6 +264,38 @@ export default function FeeCollection() {
     
     if (mode === 'QR') {
       try {
+        const isMobileDevice = Capacitor.isNativePlatform() || /android|iphone|ipad|ipod/i.test(navigator.userAgent.toLowerCase());
+
+        if (isMobileDevice) {
+          console.log('[Payment] Mobile device detected, using payment link flow for QR');
+          const token = auth.currentUser ? await auth.currentUser.getIdToken(true) : '';
+          const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+          const res = await fetch(`${backendUrl}/api/payments/create-payment-link`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+              amount: Math.round(actualAmt * 100),
+              currency: 'INR',
+              studentId: picked.id,
+              studentName: picked.fullName,
+              feeName: cat?.name || 'Fee Payment',
+              phone: (picked.phone && picked.phone.replace(/\D/g, '').length >= 10) ? picked.phone.replace(/\D/g, '').slice(-10) : '9999999999',
+              description: `Fee Payment for ${picked.fullName}`,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            alert('Backend Error: ' + JSON.stringify(data));
+            throw new Error(data.detail || 'Failed to create payment link');
+          }
+          const url = data.shortUrl;
+          toast.success('Opening payment link...');
+          try { window.open(url, '_system'); } catch (_) {}
+          setTimeout(() => { window.location.href = url; }, 300);
+          setSaving(false);
+          return;
+        }
+
         const rzpKey = process.env.REACT_APP_RAZORPAY_KEY_ID;
         
         if (!rzpKey) {
@@ -311,32 +345,12 @@ export default function FeeCollection() {
           }
         };
 
-        if (window.RazorpayCheckout) {
-          // Native Android SDK — only accepts minimal flat options
-          const nativeOptions = {
-            key: rzpKey,
-            amount: String(Math.round(actualAmt * 100)),
-            currency: 'INR',
-            name: tenant?.name || "St Paul's School",
-            description: `Fee Payment for ${picked.fullName}`,
-            prefill_name: picked.fullName || '',
-            theme_color: '#4f46e5',
-          };
-          window.RazorpayCheckout.open(nativeOptions, async (response) => {
-            const pid = typeof response === 'string' ? response : response.razorpay_payment_id;
-            await finalizePayment(actualAmt, cat, allocations, pid);
-          }, (error) => {
-            setSaving(false);
-            toast.error(error.description || 'Payment cancelled');
-          });
-        } else {
-          const rzp = new window.Razorpay(options);
-          rzp.open();
-        }
+        const rzp = new window.Razorpay(options);
+        rzp.open();
       } catch (e) {
         console.error(e);
         setSaving(false);
-        toast.error('Failed to initiate Razorpay QR');
+        toast.error('Payment Error: ' + e.message);
       }
     } else {
       await finalizePayment(actualAmt, cat, allocations);
