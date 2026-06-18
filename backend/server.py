@@ -20,7 +20,7 @@ app = FastAPI(
 # To add a domain, set CORS_ORIGINS env var in Railway (comma-separated).
 _cors_env = os.environ.get(
     "CORS_ORIGINS",
-    "https://stpauls-erp.web.app,https://stpauls-erp.firebaseapp.com,https://stpaulsschool-production.up.railway.app"
+    "https://stpauls-erp.web.app,https://stpauls-erp.firebaseapp.com,https://stpaulsschool-production.up.railway.app,http://localhost,capacitor://localhost,http://localhost:3000,http://10.0.2.2"
 )
 if _cors_env.strip() == "*":
     origins = ["*"]
