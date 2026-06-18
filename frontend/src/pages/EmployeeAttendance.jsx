@@ -14,6 +14,7 @@ import {
   formatPunchTime
 } from '../services/firebase/biometricService';
 import { toast } from 'sonner';
+import { savePDF } from '../lib/mobileDownload';
 
 const STATUS_CONFIG = {
   'PRESENT': { label: 'Present', color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20', icon: CheckCircle2 },
@@ -130,7 +131,7 @@ export default function EmployeeAttendance() {
         headStyles: { fillColor: [79, 70, 229] }
       });
 
-      doc.save(`Attendance_Daily_${date}.pdf`);
+      await savePDF(doc, `Attendance_Daily_${date}.pdf`);
     } catch (e) {
       console.error(e);
       toast.error('Failed to generate PDF');
@@ -164,7 +165,7 @@ export default function EmployeeAttendance() {
         headStyles: { fillColor: [79, 70, 229] }
       });
 
-      doc.save(`Attendance_Monthly_${month}.pdf`);
+      await savePDF(doc, `Attendance_Monthly_${month}.pdf`);
     } catch (e) {
       console.error(e);
       toast.error('Failed to generate PDF');

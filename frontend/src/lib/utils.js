@@ -19,7 +19,7 @@ export const formatDate = (d, locale = 'en-IN') => {
   return dt.toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-export const exportToCSV = (rows, filename = 'export.csv') => {
+export const exportToCSV = async (rows, filename = 'export.csv') => {
   if (!rows || !rows.length) return;
   const keys = Object.keys(rows[0]);
   const csv = [
@@ -29,13 +29,10 @@ export const exportToCSV = (rows, filename = 'export.csv') => {
     ),
   ].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  const { saveBlob } = await import('./mobileDownload');
+  await saveBlob(blob, filename);
 };
+
 
 export const getWhatsAppUrl = (phone, message) => {
   const cleaned = String(phone || '').replace(/[^0-9+]/g, '');

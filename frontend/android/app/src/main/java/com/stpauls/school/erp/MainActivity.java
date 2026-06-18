@@ -1,9 +1,17 @@
 package com.stpauls.school.erp;
 
+import android.os.Bundle;
 import android.webkit.WebSettings;
 import com.getcapacitor.BridgeActivity;
+import com.ionicframework.capacitor.Checkout;
 
 public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        registerPlugin(Checkout.class);
+    }
+
     @Override
     public void onResume() {
         super.onResume();

@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class CreateOrderRequest(BaseModel):
     amount: int          # in paise (₹1 = 100 paise)
     currency: str = "INR"
-    receipt: str         # receiptNo from Firestore transaction
+    receipt: Optional[str] = None   # auto-generated if not provided
     studentId: str
     studentName: str
     feeName: str
@@ -57,12 +57,13 @@ async def create_order(payload: CreateOrderRequest, user=Depends(require_auth)):
         raise HTTPException(status_code=503, detail="Razorpay not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to backend .env")
 
     try:
-        import razorpay
+        import razorpay, time
         client = razorpay.Client(auth=(key_id, key_secret))
+        receipt = payload.receipt or f"rcpt_{payload.studentId[:8]}_{int(time.time())}"
         order_data = {
             "amount": payload.amount,
             "currency": payload.currency,
-            "receipt": payload.receipt,
+            "receipt": receipt,
             "notes": {
                 "studentId": payload.studentId,
                 "studentName": payload.studentName,

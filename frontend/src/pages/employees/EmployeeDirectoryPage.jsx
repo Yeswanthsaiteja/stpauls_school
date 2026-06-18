@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { listEmployees, updateEmployee } from '../../services/firebase/employeesService';
+import { savePDF } from '../../lib/mobileDownload';
 
 // ─── Export helpers ────────────────────────────────────────────────────────────
 
@@ -35,9 +36,8 @@ async function exportCSV(list, filename) {
   const headers = Object.keys(rows[0]);
   const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${String(r[h] || '').replace(/"/g, '""')}"`).join(','))].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
+  const { saveBlob } = await import('../../lib/mobileDownload');
+  await saveBlob(blob, filename);
   toast.success('CSV downloaded');
 }
 
@@ -71,7 +71,7 @@ async function exportPDF(list, filename) {
     headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [248, 250, 252] },
   });
-  pdf.save(filename);
+  await savePDF(pdf, filename);
   toast.success('PDF downloaded');
 }
 

@@ -7,6 +7,7 @@ import { listAttendance } from '../services/firebase/attendanceService';
 import { listStudents } from '../services/firebase/studentsService';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { savePDF } from '../lib/mobileDownload';
 
 export default function AttendanceStatus() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -48,7 +49,7 @@ export default function AttendanceStatus() {
     };
   }, [records]);
 
-  const handleDownloadSchoolPDF = () => {
+  const handleDownloadSchoolPDF = async () => {
     if (!records.length) {
       toast.error('No attendance records found for this date');
       return;
@@ -80,10 +81,10 @@ export default function AttendanceStatus() {
       headStyles: { fillColor: [79, 70, 229] },
     });
 
-    doc.save(`School_Attendance_${date}.pdf`);
+    await savePDF(doc, `School_Attendance_${date}.pdf`);
   };
 
-  const handleDownloadClassPDF = (record) => {
+  const handleDownloadClassPDF = async (record) => {
     const className = record.className || 'Unknown';
     const section = record.section || 'Unknown';
     const attRecords = record.records || {};
@@ -127,7 +128,7 @@ export default function AttendanceStatus() {
       }
     });
 
-    doc.save(`Attendance_${className}_${section}_${date}.pdf`);
+    await savePDF(doc, `Attendance_${className}_${section}_${date}.pdf`);
   };
 
   return (

@@ -382,16 +382,20 @@ const Finance = () => {
         return;
       }
 
-      if (Capacitor.isNativePlatform()) {
-        // Native app: create a Razorpay payment link and open in external browser
+      const isMobileDevice = Capacitor.isNativePlatform() || /android|iphone|ipad|ipod/i.test(navigator.userAgent.toLowerCase());
+
+      if (isMobileDevice) {
+        // Native app / mobile device: create a Razorpay Payment Link, open in system browser
+        console.log('[Payment] Mobile device detected, using payment link flow');
         try {
           const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
           const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+          console.log('[Payment] Calling backend:', backendUrl);
           const res = await fetch(`${backendUrl}/api/payments/create-payment-link`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({
-              amount: amt * 100,
+              amount: Math.round(amt * 100),
               currency: 'INR',
               studentId,
               studentName: childName,
@@ -401,16 +405,21 @@ const Finance = () => {
             }),
           });
           const data = await res.json();
+          console.log('[Payment] Link response:', JSON.stringify(data));
           if (!res.ok) throw new Error(data.detail || 'Failed to create payment link');
+          const url = data.shortUrl;
           toast.success('Opening payment page...');
-          // Open in system browser — works natively on Android
-          window.open(data.shortUrl, '_system');
+          // Try multiple methods to open external browser
+          try { window.open(url, '_system'); } catch (_) {}
+          setTimeout(() => { window.location.href = url; }, 300);
           setPaying(false);
         } catch (e) {
+          console.error('[Payment] Error:', e);
           setPaying(false);
           toast.error('Payment failed: ' + e.message);
         }
       } else {
+        console.log('[Payment] Web platform, using Razorpay checkout');
         const rzp = new window.Razorpay(options);
         rzp.open();
       }

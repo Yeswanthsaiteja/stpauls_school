@@ -64,9 +64,9 @@ export default function Certificates() {
       // Try server-side PDF from FastAPI first
       const certType = type.includes('Transfer') ? 'TC' : 'BONAFIDE';
       const { data } = await pdfAPI.getCertificate({ type: certType, studentId: student.id, aiText: customBody || body });
-      const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }));
-      const a = document.createElement('a'); a.href = url; a.download = `${type.replace(/\s+/g, '_')}_${student.admissionNo}.pdf`; a.click();
-      URL.revokeObjectURL(url);
+      const pdfBlob = new Blob([data], { type: 'application/pdf' });
+      const { saveBlob } = await import('../../lib/mobileDownload');
+      await saveBlob(pdfBlob, `${type.replace(/\s+/g, '_')}_${student.admissionNo}.pdf`);
       toast.success('Certificate downloaded');
     } catch {
       // Fallback: client-side PDF from DOM preview

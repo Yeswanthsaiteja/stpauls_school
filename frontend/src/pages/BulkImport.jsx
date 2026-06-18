@@ -468,14 +468,12 @@ export default function BulkImport() {
   };
 
   // ── Download sample ───────────────────────────────────────────────────────
-  const downloadSample = () => {
+  const downloadSample = async () => {
     const csv = importType === 'staff' ? STAFF_CSV_SAMPLE : STUDENT_CSV_SAMPLE;
     const name = importType === 'staff' ? 'staff_sample.csv' : 'students_sample.csv';
     const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = name; a.click();
-    URL.revokeObjectURL(url);
+    const { saveBlob } = await import('../lib/mobileDownload');
+    await saveBlob(blob, name);
   };
 
   return (

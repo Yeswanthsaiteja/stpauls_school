@@ -5,6 +5,7 @@ import { Mail, Phone, MapPin, Calendar, GraduationCap, IndianRupee, FileText, Ed
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { toast } from 'sonner';
+import { savePDF } from '../../lib/mobileDownload';
 import { getStudent } from '../../services/firebase/studentsService';
 import { listTransactions, listFeeCategories } from '../../services/firebase/financeService';
 import { listResults } from '../../services/firebase/academicService';
@@ -104,7 +105,7 @@ export default function StudentProfile() {
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
       
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`${student.admissionNo}_${student.fullName.replace(/\\s+/g, '_')}_InfoSheet.pdf`);
+      await savePDF(pdf, `${student.admissionNo}_${student.fullName.replace(/\s+/g, '_')}_InfoSheet.pdf`);
       toast.success('Downloaded Info Sheet!', { id: 'pdf-toast' });
     } catch (e) {
       toast.error('Error generating PDF', { id: 'pdf-toast' });

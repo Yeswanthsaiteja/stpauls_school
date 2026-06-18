@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { useTenant } from '../../contexts/TenantContext';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { savePDF } from '../../lib/mobileDownload';
 
 export default function FeeDefaulters() {
   const { tenant } = useTenant();
@@ -121,7 +122,7 @@ export default function FeeDefaulters() {
     `${d.fullName} ${d.admissionNo}`.toLowerCase().includes(q.toLowerCase())
   );
 
-  const generateSlips = () => {
+  const generateSlips = async () => {
     if (filteredDefaulters.length === 0) return toast.error('No defaulters to print');
     
     const doc = new jsPDF('p', 'mm', 'a4');
@@ -187,11 +188,11 @@ export default function FeeDefaulters() {
       currentSlip++;
     });
 
-    doc.save(`Fee_Reminders_${selectedClass}.pdf`);
+    await savePDF(doc, `Fee_Reminders_${selectedClass}.pdf`);
     toast.success('Reminder slips generated');
   };
 
-  const generateReport = () => {
+  const generateReport = async () => {
     if (schoolSummary.length === 0) return;
     const doc = new jsPDF();
     doc.setFontSize(16);
@@ -220,7 +221,7 @@ export default function FeeDefaulters() {
       headStyles: { fillColor: [225, 29, 72] } // rose-600
     });
 
-    doc.save('School_Defaulters_Report.pdf');
+    await savePDF(doc, 'School_Defaulters_Report.pdf');
   };
 
   if (loading) return <div className="flex justify-center items-center py-20"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;

@@ -11,6 +11,7 @@ import { listStudents } from '../../services/firebase/studentsService';
 import { auth } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Capacitor } from '@capacitor/core';
+import { Checkout } from 'razorpay-capacitor';
 import {
   listTransactions, addTransaction, listFeeCategories,
   listConcessions, setConcession, listConcessionsV2, setConcessionV2,
@@ -268,11 +269,13 @@ export default function FeeCollection() {
       try {
         const isMobileDevice = Capacitor.isNativePlatform() || /android|iphone|ipad|ipod/i.test(navigator.userAgent.toLowerCase());
 
-        if (isMobileDevice) {
-          console.log('[Payment] Mobile device detected, using payment link flow for QR');
+        if (isMobileDevice && Capacitor.isNativePlatform()) {
+          console.log('[Payment] Native platform — using Razorpay native SDK');
           const token = auth.currentUser ? await auth.currentUser.getIdToken(true) : '';
           const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
-          const res = await fetch(`${backendUrl}/api/payments/create-payment-link`, {
+
+          // Create Razorpay order on backend
+          const res = await fetch(`${backendUrl}/api/payments/create-order`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({
@@ -281,20 +284,39 @@ export default function FeeCollection() {
               studentId: picked.id,
               studentName: picked.fullName,
               feeName: cat?.name || 'Fee Payment',
-              phone: (picked.phone && picked.phone.replace(/\D/g, '').length >= 10) ? picked.phone.replace(/\D/g, '').slice(-10) : (profile?.phone ? profile.phone.replace(/\D/g, '').slice(-10) : '8897245345'),
-              description: `Fee Payment for ${picked.fullName}`,
             }),
           });
-          const data = await res.json();
+          const orderData = await res.json();
           if (!res.ok) {
-            alert('Backend Error: ' + JSON.stringify(data));
-            throw new Error(data.detail || 'Failed to create payment link');
+            throw new Error(orderData.detail || 'Failed to create order');
           }
-          const url = data.shortUrl;
-          toast.success('Opening payment link...');
-          try { window.open(url, '_system'); } catch (_) {}
-          setTimeout(() => { window.location.href = url; }, 300);
-          setSaving(false);
+
+          const options = {
+            key: process.env.REACT_APP_RAZORPAY_KEY_ID,
+            amount: String(Math.round(actualAmt * 100)),
+            currency: 'INR',
+            name: tenant?.name || "St Paul's School",
+            description: `Fee Payment for ${picked.fullName}`,
+            order_id: orderData.orderId,
+            prefill: {
+              name: picked.fullName,
+              contact: (picked.phone && picked.phone.replace(/\D/g, '').length >= 10)
+                ? picked.phone.replace(/\D/g, '').slice(-10)
+                : (profile?.phone ? profile.phone.replace(/\D/g, '').slice(-10) : '8897245345'),
+            },
+            theme: { color: '#4f46e5' },
+          };
+
+          try {
+            const result = await Checkout.open(options);
+            const pid = result?.response?.razorpay_payment_id || result?.razorpay_payment_id || 'NATIVE_PAY';
+            await finalizePayment(actualAmt, cat, allocations, pid);
+          } catch (payErr) {
+            setSaving(false);
+            if (payErr?.code !== 'PAYMENT_CANCELLED') {
+              toast.error('Payment failed: ' + (payErr?.description || payErr?.message || 'Unknown error'));
+            }
+          }
           return;
         }
 

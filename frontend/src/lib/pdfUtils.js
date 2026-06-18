@@ -1,4 +1,6 @@
 // PDF + certificate utilities (lazy-imports jspdf).
+import { savePDF } from './mobileDownload';
+
 export async function downloadElementAsPDF(elementId, filename = 'document.pdf') {
   const { default: jsPDF } = await import('jspdf');
   const { default: html2canvas } = await import('html2canvas');
@@ -13,8 +15,9 @@ export async function downloadElementAsPDF(elementId, filename = 'document.pdf')
   const w = canvas.width * ratio;
   const h = canvas.height * ratio;
   pdf.addImage(img, 'JPEG', (pageW - w) / 2, 30, w, h);
-  pdf.save(filename);
+  await savePDF(pdf, filename);
 }
+
 
 export function nextReceiptNo(existing = []) {
   const nums = existing
