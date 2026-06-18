@@ -99,8 +99,7 @@ async def create_payment_link(payload: CreatePaymentLinkRequest, user=Depends(re
             "accept_partial": False,
             "description": payload.description or f"Fee: {payload.feeName} — {payload.studentName}",
             "customer": {
-                "name": payload.studentName,
-                "contact": "9876543210" if (not payload.phone or len(payload.phone) < 10 or payload.phone == "9999999999") else payload.phone,
+                "name": payload.studentName
             },
             "notify": {"sms": False, "email": False},
             "reminder_enable": False,
@@ -108,7 +107,24 @@ async def create_payment_link(payload: CreatePaymentLinkRequest, user=Depends(re
                 "studentId": payload.studentId,
                 "feeName": payload.feeName,
             },
+            "options": {
+                "checkout": {
+                    "method": {
+                        "netbanking": False,
+                        "card": False,
+                        "wallet": False,
+                        "emi": False,
+                        "paylater": False,
+                        "upi": True
+                    }
+                }
+            }
         }
+        
+        # Only add contact if it's a valid 10+ digit number, no fallbacks
+        if payload.phone and len(payload.phone) >= 10 and payload.phone not in ["9999999999", "9876543210"]:
+            link_data["customer"]["contact"] = payload.phone
+            
         link = client.payment_link.create(link_data)
         return CreatePaymentLinkResponse(
             paymentLinkId=link["id"],
