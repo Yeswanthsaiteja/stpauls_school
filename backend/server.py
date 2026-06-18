@@ -21,7 +21,7 @@ _cors_env = os.environ.get(
     "CORS_ORIGINS",
     "*"
 )
-origins = ["*"]
+origins = ["*", "https://localhost", "http://localhost", "capacitor://localhost"]
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -32,7 +32,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"], # Just use wildcard for everything
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
