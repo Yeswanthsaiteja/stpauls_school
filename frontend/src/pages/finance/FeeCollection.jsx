@@ -305,6 +305,18 @@ export default function FeeCollection() {
                 : (profile?.phone ? profile.phone.replace(/\D/g, '').slice(-10) : '8897245345'),
             },
             theme: { color: '#4f46e5' },
+            config: {
+              display: {
+                blocks: {
+                  upi: {
+                    name: 'Pay via UPI / Scanner',
+                    instruments: [{ method: 'upi' }],
+                  },
+                },
+                sequence: ['block.upi'],
+                preferences: { show_default_blocks: false },
+              },
+            },
           };
 
           try {
