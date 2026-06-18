@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { listStudents } from '../../services/firebase/studentsService';
 import { auth } from '../../lib/firebase';
+import { useAuth } from '../../contexts/AuthContext';
 import { Capacitor } from '@capacitor/core';
 import {
   listTransactions, addTransaction, listFeeCategories,
@@ -64,6 +65,7 @@ function ConcessionEditor({ value, onSave, onCancel }) {
 export default function FeeCollection() {
   const { studentId: paramStudentId } = useParams();
   const { tenant } = useTenant();
+  const { profile } = useAuth();
 
   const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
   const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
