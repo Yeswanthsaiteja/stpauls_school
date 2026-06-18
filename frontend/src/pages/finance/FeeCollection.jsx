@@ -11,7 +11,7 @@ import { listStudents } from '../../services/firebase/studentsService';
 import { auth } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Capacitor } from '@capacitor/core';
-import { Checkout } from 'razorpay-capacitor';
+import { Checkout } from 'capacitor-razorpay';
 import {
   listTransactions, addTransaction, listFeeCategories,
   listConcessions, setConcession, listConcessionsV2, setConcessionV2,
