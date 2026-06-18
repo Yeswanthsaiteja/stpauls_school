@@ -1,5 +1,6 @@
 import React, { useEffect, useState, createContext, useContext, useCallback, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
+import { Checkout } from 'capacitor-razorpay';
 import { getCurrentAcademicYear } from '../utils';
 
 import { motion, AnimatePresence } from 'framer-motion';
@@ -382,41 +383,69 @@ const Finance = () => {
         return;
       }
 
-      const isMobileDevice = Capacitor.isNativePlatform() || /android|iphone|ipad|ipod/i.test(navigator.userAgent.toLowerCase());
+      const isMobileDevice = Capacitor.isNativePlatform();
 
       if (isMobileDevice) {
-        // Native app / mobile device: create a Razorpay Payment Link, open in system browser
-        console.log('[Payment] Mobile device detected, using payment link flow');
+        // Native app: use Razorpay native SDK — no browser, UPI only
+        console.log('[Payment] Native platform — using Razorpay native SDK');
         try {
-          const token = auth.currentUser ? await auth.currentUser.getIdToken() : '';
-          const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
-          console.log('[Payment] Calling backend:', backendUrl);
-          const res = await fetch(`${backendUrl}/api/payments/create-payment-link`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({
-              amount: Math.round(amt * 100),
-              currency: 'INR',
-              studentId,
-              studentName: childName,
-              feeName: cat?.name || 'Fee Payment',
-              phone: (profile?.phone || '').replace(/\D/g, '').slice(-10),
-              description: `Fee Payment — ${cat?.name || 'Online'} for ${childName}`,
-            }),
+          const nativeOptions = {
+            key: process.env.REACT_APP_RAZORPAY_KEY_ID || '',
+            amount: String(Math.round(amt * 100)),
+            currency: 'INR',
+            name: "St. Paul's High School",
+            description: `Fee Payment — ${cat?.name || 'Online'}`,
+            order_id: orderId || undefined,
+            prefill: {
+              name: profile?.fullName || childName,
+              contact: (profile?.phone || '8897245345').replace(/\D/g, '').slice(-10),
+            },
+            theme: { color: '#4f46e5' },
+            config: {
+              display: {
+                blocks: {
+                  upi: {
+                    name: 'Pay via UPI / Scanner',
+                    instruments: [{ method: 'upi' }],
+                  },
+                },
+                sequence: ['block.upi'],
+                preferences: { show_default_blocks: false },
+              },
+            },
+          };
+          const result = await Checkout.open(nativeOptions);
+          const pid = result?.response?.razorpay_payment_id || result?.razorpay_payment_id || 'NATIVE_PAY';
+          // Record payment in Firestore
+          await addDoc(collection(db, 'transactions'), {
+            studentId,
+            studentName: childName,
+            amount: amt,
+            categoryId: selectedCategoryId,
+            feeName: cat?.name || 'Online Fee Payment',
+            status: 'PAID',
+            paymentMode: 'UPI',
+            paymentMethod: 'ONLINE',
+            paymentId: pid,
+            receiptNo,
+            termAllocations: allocations,
+            tenantId: process.env.REACT_APP_TENANT_ID || 'stpauls',
+            paidAt: serverTimestamp(),
+            paymentDate: new Date().toISOString(),
+            admissionNo: activeChild?.admissionNo || profile?.linkedStudentAdmissionNo || '',
+            className: activeChild?.className || profile?.linkedStudentClass || '',
+            section: activeChild?.section || profile?.linkedStudentSection || '',
+            fatherName: activeChild?.fatherName || profile?.fatherName || '',
           });
-          const data = await res.json();
-          console.log('[Payment] Link response:', JSON.stringify(data));
-          if (!res.ok) throw new Error(data.detail || 'Failed to create payment link');
-          const url = data.shortUrl;
-          toast.success('Opening payment page...');
-          // Try multiple methods to open external browser
-          try { window.open(url, '_system'); } catch (_) {}
-          setTimeout(() => { window.location.href = url; }, 300);
+          toast.success('Payment successful!');
+          setPayAmount('');
+          loadData();
+        } catch (payErr) {
+          if (payErr?.code !== 'PAYMENT_CANCELLED') {
+            toast.error('Payment failed: ' + (payErr?.description || payErr?.message || 'Unknown error'));
+          }
+        } finally {
           setPaying(false);
-        } catch (e) {
-          console.error('[Payment] Error:', e);
-          setPaying(false);
-          toast.error('Payment failed: ' + e.message);
         }
       } else {
         console.log('[Payment] Web platform, using Razorpay checkout');
