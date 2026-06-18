@@ -106,23 +106,6 @@ async def create_payment_link(payload: CreatePaymentLinkRequest, user=Depends(re
             "notes": {
                 "studentId": payload.studentId,
                 "feeName": payload.feeName,
-            },
-            "options": {
-                "checkout": {
-                    "name": "St. Pauls",
-                    "config": {
-                        "display": {
-                            "blocks": {
-                                "upi": {
-                                    "name": "Pay via UPI",
-                                    "instruments": [{"method": "upi"}]
-                                }
-                            },
-                            "sequence": ["block.upi"],
-                            "preferences": {"show_default_blocks": False}
-                        }
-                    }
-                }
             }
         }
         
