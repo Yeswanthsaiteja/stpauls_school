@@ -10,6 +10,13 @@
     "captureInput": true,
     "webContentsDebuggingEnabled": false
   },
+  "ios": {
+    "scheme": "App",
+    "contentInset": "automatic",
+    "allowsLinkPreview": false,
+    "scrollEnabled": true,
+    "limitsNavigationsToAppBoundDomains": true
+  },
   "plugins": {
     "FirebaseAuthentication": {
       "skipNativeAuth": false,
@@ -21,6 +28,7 @@
       "backgroundColor": "#4f46e5",
       "androidSplashResourceName": "splash",
       "androidScaleType": "CENTER_CROP",
+      "iosSplashResourceName": "Splash",
       "showSpinner": false,
       "splashFullScreen": true,
       "splashImmersive": true
