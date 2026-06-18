@@ -100,7 +100,7 @@ async def create_payment_link(payload: CreatePaymentLinkRequest, user=Depends(re
             "description": payload.description or f"Fee: {payload.feeName} — {payload.studentName}",
             "customer": {
                 "name": payload.studentName,
-                "contact": payload.phone if (payload.phone and len(payload.phone) >= 10) else "9999999999",
+                "contact": "9876543210" if (not payload.phone or len(payload.phone) < 10 or payload.phone == "9999999999") else payload.phone,
             },
             "notify": {"sms": False, "email": False},
             "reminder_enable": False,

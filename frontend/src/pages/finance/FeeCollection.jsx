@@ -279,7 +279,7 @@ export default function FeeCollection() {
               studentId: picked.id,
               studentName: picked.fullName,
               feeName: cat?.name || 'Fee Payment',
-              phone: (picked.phone && picked.phone.replace(/\D/g, '').length >= 10) ? picked.phone.replace(/\D/g, '').slice(-10) : '9999999999',
+              phone: (picked.phone && picked.phone.replace(/\D/g, '').length >= 10) ? picked.phone.replace(/\D/g, '').slice(-10) : '9876543210',
               description: `Fee Payment for ${picked.fullName}`,
             }),
           });
