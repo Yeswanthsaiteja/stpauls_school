@@ -109,13 +109,18 @@ async def create_payment_link(payload: CreatePaymentLinkRequest, user=Depends(re
             },
             "options": {
                 "checkout": {
-                    "method": {
-                        "netbanking": False,
-                        "card": False,
-                        "wallet": False,
-                        "emi": False,
-                        "paylater": False,
-                        "upi": True
+                    "name": "St. Pauls",
+                    "config": {
+                        "display": {
+                            "blocks": {
+                                "upi": {
+                                    "name": "Pay via UPI",
+                                    "instruments": [{"method": "upi"}]
+                                }
+                            },
+                            "sequence": ["block.upi"],
+                            "preferences": {"show_default_blocks": False}
+                        }
                     }
                 }
             }
