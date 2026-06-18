@@ -421,17 +421,13 @@ export function AuthProvider({ children }) {
 
     if (Capacitor.isNativePlatform()) {
       console.log('[NativeAuth] Initiating phone auth natively for phone:', phone);
-      return new Promise(async (resolve) => {
+      const nativeAuthPromise = new Promise(async (resolve) => {
         let codeSentListener;
         let verificationFailedListener;
 
         const cleanupListeners = () => {
-          if (codeSentListener) {
-            codeSentListener.remove();
-          }
-          if (verificationFailedListener) {
-            verificationFailedListener.remove();
-          }
+          if (codeSentListener) codeSentListener.remove();
+          if (verificationFailedListener) verificationFailedListener.remove();
         };
 
         codeSentListener = await FirebaseAuthentication.addListener('phoneCodeSent', (event) => {
@@ -440,15 +436,13 @@ export function AuthProvider({ children }) {
           pendingPhoneRef.current = phone;
           localStorage.setItem('stpauls_pending_phone', phone);
           cleanupListeners();
-          resolve({ ok: true, phone, channel: 'sms' });
+          resolve({ ok: true, phone, channel: 'sms', native: true });
         });
 
         verificationFailedListener = await FirebaseAuthentication.addListener('phoneVerificationFailed', (error) => {
           console.error('[NativeAuth] phoneVerificationFailed event received:', error);
           cleanupListeners();
-          const friendly = _friendlyFirebaseError(error?.code) || error?.message || 'Failed to send OTP. Please try again.';
-          setAuthError(friendly);
-          resolve({ ok: false, error: friendly });
+          resolve({ ok: false, fallbackToWeb: true, error });
         });
 
         try {
@@ -456,11 +450,21 @@ export function AuthProvider({ children }) {
         } catch (e) {
           console.error('[NativeAuth] Exception during native signInWithPhoneNumber:', e);
           cleanupListeners();
-          const friendly = _friendlyFirebaseError(e?.code) || e?.message || 'Failed to send OTP. Please try again.';
-          setAuthError(friendly);
-          resolve({ ok: false, error: friendly });
+          resolve({ ok: false, fallbackToWeb: true, error: e });
         }
       });
+
+      const nativeResult = await nativeAuthPromise;
+      if (nativeResult.ok) {
+        return nativeResult; // Native auth succeeded
+      } else if (!nativeResult.fallbackToWeb) {
+        // Hard failure
+        const friendly = _friendlyFirebaseError(nativeResult.error?.code) || nativeResult.error?.message || 'Failed to send OTP. Please try again.';
+        setAuthError(friendly);
+        return { ok: false, error: friendly };
+      }
+      // If we reach here, Native Auth failed (e.g. Play Integrity failed), so we fallback to Web SDK below
+      console.warn('[NativeAuth] Native auth failed, falling back to Web SDK (reCAPTCHA)...');
     }
 
     try {
@@ -471,7 +475,7 @@ export function AuthProvider({ children }) {
 
       pendingPhoneRef.current = phone;
       localStorage.setItem('stpauls_pending_phone', phone);
-      return { ok: true, phone, channel: 'sms' };
+      return { ok: true, phone, channel: 'sms', native: false };
     } catch (e) {
       // Clean up the reCAPTCHA widget so fresh one is created on retry
       if (window.recaptchaVerifier) {
@@ -489,7 +493,7 @@ export function AuthProvider({ children }) {
     setAuthError(null);
     const targetPhone = phone || pendingPhoneRef.current || localStorage.getItem('stpauls_pending_phone');
 
-    if (Capacitor.isNativePlatform()) {
+    if (Capacitor.isNativePlatform() && window.nativeVerificationId) {
       const verificationId = window.nativeVerificationId;
       if (!targetPhone || !verificationId) {
         return { ok: false, error: 'Session expired. Please request OTP again.' };
