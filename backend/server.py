@@ -14,25 +14,28 @@ app = FastAPI(
     description="Slim FastAPI backend: Razorpay, WhatsApp (MSG91), AI Insights, PDF, Reports",
     version="1.0.0",
 )
-
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 # Production: locked to known origins only.
 # To add a domain, set CORS_ORIGINS env var in Railway (comma-separated).
 _cors_env = os.environ.get(
     "CORS_ORIGINS",
-    "https://stpauls-erp.web.app,https://stpauls-erp.firebaseapp.com,https://stpaulsschool-production.up.railway.app,http://localhost,capacitor://localhost,http://localhost:3000,http://10.0.2.2"
+    "*"
 )
-if _cors_env.strip() == "*":
-    origins = ["*"]
-else:
-    origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+origins = ["*"]
+
+# ─── App ──────────────────────────────────────────────────────────────────────
+app = FastAPI(
+    title="St. Paul's High School ERP API",
+    description="Backend API for Razorpay, WhatsApp, Firebase syncing, AI chat, and Document processing.",
+    version="1.0.0"
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
