@@ -437,6 +437,16 @@ const Finance = () => {
             section: activeChild?.section || profile?.linkedStudentSection || '',
             fatherName: activeChild?.fatherName || profile?.fatherName || '',
           });
+          // Send notification to admin
+          try {
+            await addNotification({
+              title: 'Fee Payment Received',
+              message: `₹${amt.toLocaleString('en-IN')} paid by parent for ${childName} (${cat?.name || 'Fee'}) via UPI`,
+              type: 'fee',
+              studentId,
+              studentName: childName,
+            });
+          } catch (_) {}
           toast.success('Payment successful!');
           setPayAmount('');
           loadData();
@@ -1105,7 +1115,7 @@ function ParentHome() {
               <div className="glass-morphism rounded-[2rem] p-5">
                 <div className="label-eyebrow text-muted-foreground">Quick Info</div>
                 <div className="mt-4 space-y-3">
-                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Academic Year</span><span className="font-bold">{child?.academicYear || '2025-26'}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Academic Year</span><span className="font-bold">{child?.academicYear || '2026-27'}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-muted-foreground">Section</span><span className="font-bold">{child?.section || activeChild?.section || '—'}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-muted-foreground">House</span><span className="font-bold">{child?.house || '—'}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-muted-foreground">Medium</span><span className="font-bold">{child?.mediumOfInstruction || 'English'}</span></div>
@@ -1160,7 +1170,7 @@ function ParentHome() {
 // ─── Root router — owns the active-child state ────────────────────────────────
 export default function ParentDashboard() {
   const { profile } = useAuth();
-  const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const [academicYear, setAcademicYear] = useState('2026-27');
   const YEARS = ['2024-25', '2025-26', '2026-27', '2027-28'];
 
   // Build linked students list from profile

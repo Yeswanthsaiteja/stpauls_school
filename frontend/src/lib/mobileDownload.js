@@ -7,6 +7,8 @@ import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 
+let _isSharing = false;
+
 const blobToBase64 = (blob) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onloadend = () => resolve(reader.result);
@@ -16,6 +18,8 @@ const blobToBase64 = (blob) => new Promise((resolve, reject) => {
 
 export async function savePDF(pdfInstance, filename = 'document.pdf') {
   if (Capacitor.isNativePlatform()) {
+    if (_isSharing) return; // Prevent double-trigger silently
+    _isSharing = true;
     try {
       const dataUri = pdfInstance.output('datauristring');
       const base64Data = dataUri.split(',')[1];
@@ -32,9 +36,14 @@ export async function savePDF(pdfInstance, filename = 'document.pdf') {
         dialogTitle: 'Save or Share PDF'
       });
     } catch (e) {
-      console.error('Mobile PDF share failed:', e);
-      alert('PDF Error: ' + (e.message || JSON.stringify(e)));
-      pdfInstance.save(filename);
+      // Silently ignore "sharing already in progress" errors — no popup
+      const msg = e?.message || JSON.stringify(e);
+      if (!msg.includes('progress') && !msg.includes('cancel') && !msg.includes('dismiss')) {
+        console.error('Mobile PDF share failed:', msg);
+      }
+    } finally {
+      // Reset sharing flag after a short delay to debounce rapid taps
+      setTimeout(() => { _isSharing = false; }, 1000);
     }
   } else {
     pdfInstance.save(filename);
@@ -43,6 +52,8 @@ export async function savePDF(pdfInstance, filename = 'document.pdf') {
 
 export async function saveBlob(blob, filename) {
   if (Capacitor.isNativePlatform()) {
+    if (_isSharing) return; // Prevent double-trigger silently
+    _isSharing = true;
     try {
       const base64String = await blobToBase64(blob);
       const base64Data = base64String.split(',')[1];
@@ -59,9 +70,14 @@ export async function saveBlob(blob, filename) {
         dialogTitle: 'Save or Share File'
       });
     } catch (e) {
-      console.error('Mobile blob share failed:', e);
-      alert('Blob Error: ' + (e.message || JSON.stringify(e)));
-      triggerBlobDownload(blob, filename);
+      // Silently ignore "sharing already in progress" errors — no popup
+      const msg = e?.message || JSON.stringify(e);
+      if (!msg.includes('progress') && !msg.includes('cancel') && !msg.includes('dismiss')) {
+        console.error('Mobile blob share failed:', msg);
+        triggerBlobDownload(blob, filename);
+      }
+    } finally {
+      setTimeout(() => { _isSharing = false; }, 1000);
     }
   } else {
     triggerBlobDownload(blob, filename);
