@@ -19,6 +19,7 @@ import { downloadElementAsPDF } from '../lib/pdfUtils';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import ReceiptTemplate from '../components/ReceiptTemplate';
+import ReportCardPDF from '../components/ReportCardPDF';
 import { useAuth } from '../contexts/AuthContext';
 import { getStudent } from '../services/firebase/studentsService';
 import { listTransactions, listFeeCategories, allocatePayment, computeTermPaid } from '../services/firebase/financeService';
@@ -46,6 +47,7 @@ const MODULES = [
   { key: 'result',        label: 'Results',            icon: FileText,       color: 'bg-amber-500',   tint: 'bg-amber-500/10 text-amber-500' },
   { key: 'support',       label: 'Support',            icon: Headset,        color: 'bg-rose-500',    tint: 'bg-rose-500/10 text-rose-500' },
   { key: 'messages',      label: 'Messages',           icon: MessageSquare,  color: 'bg-cyan-500',    tint: 'bg-cyan-500/10 text-cyan-500' },
+  { key: 'class-timetable',label: 'Class Timetable',   icon: Calendar,       color: 'bg-emerald-500', tint: 'bg-emerald-500/10 text-emerald-500' },
   { key: 'exam-timetable',label: 'Exam Timetable',     icon: Calendar,       color: 'bg-indigo-500',  tint: 'bg-indigo-500/10 text-indigo-500' },
   { key: 'gps',           label: 'GPS Tracking',       icon: MapPin,         color: 'bg-slate-500',   tint: 'bg-slate-500/10 text-slate-500' },
   { key: 'online-exams',  label: 'Online Exams',       icon: Gamepad2,       color: 'bg-orange-500',  tint: 'bg-orange-500/10 text-orange-500' },
@@ -111,10 +113,74 @@ const Announcements = () => {
                 <span className="label-eyebrow text-muted-foreground">{a.date}</span>
               </div>
               <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{a.description}</p>
+              {a.attachmentUrl && (
+                <a href={a.attachmentUrl} target="_blank" rel="noreferrer" className="text-xs text-primary underline mt-2 inline-block">
+                  📎 {a.attachmentName || 'View Attachment'}
+                </a>
+              )}
             </div>
           ))}
         </div>
       )}
+    </SimplePage>
+  );
+};
+
+// ─── Class Timetable page ────────────────────────────────────────────────────
+import { getTimetable } from '../services/firebase/academicService';
+
+const ClassTimetable = () => {
+  const { activeChild } = useParentChild();
+  const [grid, setGrid] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (activeChild?.className) {
+      setLoading(true);
+      getTimetable(activeChild.className, activeChild.section || '').then(data => {
+        setGrid(data?.slots || {});
+        setLoading(false);
+      });
+    } else {
+      setLoading(false);
+    }
+  }, [activeChild]);
+
+  let maxPeriod = -1;
+  Object.keys(grid).forEach(k => {
+     const p = parseInt(k.split('-')[1], 10);
+     if (p > maxPeriod) maxPeriod = p;
+  });
+  const periodsCount = Math.max(maxPeriod + 1, 8); // At least 8 periods to match usual display
+  const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  return (
+    <SimplePage title="Class Timetable" testId="parent-timetable">
+      {loading ? <div className="text-center py-4 text-muted-foreground">Loading...</div> : 
+      <div className="glass-morphism rounded-[2rem] p-3 overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr>
+              <th className="label-eyebrow text-muted-foreground p-2 text-left">Day</th>
+              {Array.from({ length: periodsCount }, (_, i) => (
+                <th key={i} className="label-eyebrow text-muted-foreground p-2 text-left min-w-[100px]">P{i + 1}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {DAYS.map((d) => (
+              <tr key={d} className="border-t border-border">
+                <td className="p-2 font-bold">{d}</td>
+                {Array.from({ length: periodsCount }, (_, i) => (
+                  <td key={i} className="p-2 text-sm border-l border-border/50 break-words">
+                    {grid[`${d}-${i}`] || '-'}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>}
     </SimplePage>
   );
 };
@@ -124,7 +190,10 @@ const Result = () => {
   const { activeChild } = useParentChild();
   const studentId = activeChild?.id;
   const [list, setList] = useState([]);
+  const [examSetups, setExamSetups] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [downloadingExam, setDownloadingExam] = useState(null);
+  const [selectedExam, setSelectedExam] = useState('');
 
   useEffect(() => {
     if (!studentId) { setLoading(false); return; }
@@ -132,51 +201,142 @@ const Result = () => {
     
     Promise.all([
       listResults({ studentId }),
-      listExamSetups()
+      listExamSetups({ className: activeChild?.className || '' })
     ]).then(([resultsData, examsData]) => {
       // Filter out results if their associated exam setup does not have a past releaseDate
       const now = new Date();
       
       const allowedExams = new Set();
+      const examSetupMap = {};
       examsData.forEach(ex => {
         if (ex.releaseDate && new Date(ex.releaseDate) <= now) {
           // Both examType or customName might be used, store both to be safe
-          if (ex.examType !== 'Other') allowedExams.add(ex.examType);
-          if (ex.customName) allowedExams.add(ex.customName);
+          if (ex.examType !== 'Other') {
+            allowedExams.add(ex.examType);
+            examSetupMap[ex.examType] = ex;
+          }
+          if (ex.customName) {
+            allowedExams.add(ex.customName);
+            examSetupMap[ex.customName] = ex;
+          }
         }
       });
       
       // Some old results might not have examType, but if they do, strictly enforce releaseDate
       const visibleResults = resultsData.filter(r => {
         if (!r.examType) return true; // fallback for legacy data
-        return allowedExams.has(r.examType);
+        if (!allowedExams.has(r.examType)) return false;
+
+        const setup = examSetupMap[r.examType];
+        if (setup && setup.schedule && activeChild?.className && setup.schedule[activeChild.className]) {
+           const subjectExists = setup.schedule[activeChild.className].some(s => s.subjectName === (r.subject || r.subjectName));
+           if (!subjectExists) return false;
+        }
+
+        return true;
       });
       
       setList(visibleResults);
+      setExamSetups(examsData);
       setLoading(false);
     });
-  }, [studentId]);
+  }, [studentId, activeChild]);
 
   const gradeColor = (g) => ({ 'A+': 'bg-indigo-500/10 text-indigo-500', 'A': 'bg-emerald-500/10 text-emerald-500', 'B': 'bg-amber-500/10 text-amber-500', 'C': 'bg-orange-500/10 text-orange-500', 'D': 'bg-rose-500/10 text-rose-500' }[g] || 'bg-muted');
+
+  const groupedResults = list.reduce((acc, r) => {
+    const type = r.examType || 'Other';
+    if (!acc[type]) acc[type] = [];
+    acc[type].push(r);
+    return acc;
+  }, {});
+
+  useEffect(() => {
+    if (!selectedExam && Object.keys(groupedResults).length > 0) {
+      setSelectedExam(Object.keys(groupedResults)[0]);
+    }
+  }, [groupedResults, selectedExam]);
+
+  const handleDownload = async (examName) => {
+    setDownloadingExam(examName);
+    try {
+      // Small delay to ensure the DOM is painted
+      await new Promise(r => setTimeout(r, 100));
+      await downloadElementAsPDF(`pdf-report-${examName.replace(/\s+/g, '-')}`, `${activeChild.name}_${examName.replace(/\s+/g, '_')}_ReportCard.pdf`);
+      toast.success('Report card downloaded successfully!');
+    } catch(e) {
+      toast.error('Failed to download PDF');
+    }
+    setDownloadingExam(null);
+  };
 
   return (
     <SimplePage title="Results" testId="parent-result">
       {loading ? <div className="text-center text-muted-foreground py-4">Loading…</div> :
-        list.length === 0 ? <div className="text-center text-muted-foreground py-4">No results have been released yet.</div> :
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {list.map((r, i) => (
-            <div key={r.id || i} className="p-4 rounded-2xl border border-border">
-              <div className="flex items-center justify-between">
-                <div className="font-bold">{r.subject || r.subjectName}</div>
-                <span className={`px-2.5 py-1 rounded-full label-eyebrow ${gradeColor(r.grade)}`}>{r.grade}</span>
+        Object.keys(groupedResults).length === 0 ? <div className="text-center text-muted-foreground py-4">No results have been released yet.</div> :
+        <div className="space-y-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+             <select 
+               value={selectedExam} 
+               onChange={(e) => setSelectedExam(e.target.value)}
+               className="h-10 px-4 rounded-xl border border-border bg-card text-sm font-medium outline-none focus:border-primary"
+             >
+               {Object.keys(groupedResults).map(exam => <option key={exam} value={exam}>{exam}</option>)}
+             </select>
+             
+             {selectedExam && (
+               <button 
+                 onClick={() => handleDownload(selectedExam)}
+                 disabled={downloadingExam === selectedExam}
+                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 text-sm font-semibold transition-colors disabled:opacity-50"
+               >
+                 <FileDown className="h-4 w-4" />
+                 {downloadingExam === selectedExam ? 'Generating PDF...' : 'Download Report Card'}
+               </button>
+             )}
+          </div>
+          
+          {selectedExam && groupedResults[selectedExam] && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {groupedResults[selectedExam].map((r, i) => {
+                  const setupSubject = examSetups.find(e => (e.examType === r.examType || e.customName === r.examType))?.schedule?.[activeChild?.className]?.find(s => s.subjectName === (r.subject || r.subjectName));
+                  const isGradeOnly = setupSubject?.isGradeOnly || false;
+
+                  return (
+                  <div key={r.id || i} className="p-4 rounded-2xl border border-border bg-card">
+                    <div className="flex items-center justify-between">
+                      <div className="font-bold">{r.subject || r.subjectName}</div>
+                      {r.grade === 'AB' ? (
+                        <span className="px-2.5 py-1 rounded-full label-eyebrow bg-rose-500/10 text-rose-500">Absent</span>
+                      ) : (
+                        <span className={`px-2.5 py-1 rounded-full label-eyebrow ${gradeColor(r.grade)}`}>{r.grade}</span>
+                      )}
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-2">
+                      {isGradeOnly ? (
+                        <div className="font-display font-black text-3xl tracking-tighter text-muted-foreground">{r.grade === 'AB' ? <span className="text-rose-500 text-2xl uppercase tracking-widest">Absent</span> : r.grade}</div>
+                      ) : (
+                        <>
+                          <div className="font-display font-black text-3xl tracking-tighter">{r.marks === 'AB' ? <span className="text-rose-500 text-2xl uppercase tracking-widest">Absent</span> : r.marks}</div>
+                          {r.marks !== 'AB' && <div className="text-sm text-muted-foreground">/ {r.totalMarks || 100}</div>}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )})}
               </div>
-              {r.examType && <div className="text-xs text-muted-foreground mt-1 mb-2">Exam: <span className="font-bold">{r.examType}</span></div>}
-              <div className="mt-2 flex items-baseline gap-2">
-                <div className="font-display font-black text-3xl tracking-tighter">{r.marks}</div>
-                <div className="text-sm text-muted-foreground">/ {r.totalMarks || 100}</div>
-              </div>
+
+              {/* Hidden Report Card PDF Container */}
+              <ReportCardPDF 
+                id={`pdf-report-${selectedExam.replace(/\s+/g, '-')}`} 
+                student={activeChild} 
+                examName={selectedExam} 
+                results={groupedResults[selectedExam]} 
+                examSetup={examSetups.find(e => (e.examType === selectedExam || e.customName === selectedExam))}
+              />
             </div>
-          ))}
+          )}
         </div>
       }
     </SimplePage>
@@ -726,6 +886,11 @@ const ParentDiaryPage = () => {
   const studentSection = activeChild?.section || '';
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  const today = new Date();
+  today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+  const localDateStr = today.toISOString().split('T')[0];
+  const [selectedDate, setSelectedDate] = useState(localDateStr);
 
   useEffect(() => {
     setLoading(true);
@@ -735,20 +900,30 @@ const ParentDiaryPage = () => {
     });
   }, [studentClass]);
 
-  // Filter by academicYear, class, and section
+  // Filter by academicYear, class, section, AND selectedDate
   const visible = entries.filter(d =>
     (!activeChild?.academicYear || !d.academicYear || d.academicYear === activeChild.academicYear) &&
     (!studentClass || d.className === studentClass) &&
-    (!studentSection || d.section === studentSection || !d.section)
+    (!studentSection || d.section === studentSection || !d.section) &&
+    d.date === selectedDate
   );
 
   return (
     <SimplePage title="Class Diary" testId="parent-diary">
       {studentClass && (
-        <div className="mb-4 flex items-center gap-2">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 bg-indigo-50/50 p-3 rounded-2xl border border-indigo-100/50">
           <span className="px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-600 label-eyebrow">
             Class {studentClass}{studentSection ? `-${studentSection}` : ''} · {activeChild?.name || 'Student'}
           </span>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-semibold text-muted-foreground">Date:</label>
+            <input 
+              type="date" 
+              value={selectedDate} 
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="h-9 px-3 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+            />
+          </div>
         </div>
       )}
       {loading ? (
@@ -1064,7 +1239,7 @@ function ParentHome() {
     }
   }, [profile?.phone]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const avatar = `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(child?.fullName || activeChild?.name || 'Aanya')}`;
+  const avatar = child?.photoURL || activeChild?.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(child?.fullName || activeChild?.name || 'Aanya')}`;
   const parentName = profile?.displayName || profile?.fullName || 'Parent';
 
   return (
@@ -1103,7 +1278,7 @@ function ParentHome() {
                       {child?.className && <span className="px-3 py-1 rounded-full bg-white/15 label-eyebrow">Class {child.className}-{child.section}</span>}
                       {!child && activeChild?.className && <span className="px-3 py-1 rounded-full bg-white/15 label-eyebrow">Class {activeChild.className}</span>}
                     </div>
-                    <a href={getWhatsAppUrl('+919000000000', `Hello, I am parent of ${child?.fullName || 'my child'}`)}
+                    <a href={getWhatsAppUrl('+918978186701', `Hello, I am parent of ${child?.fullName || 'my child'}`)}
                       target="_blank" rel="noreferrer"
                       className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-2xl bg-white text-indigo-700 label-eyebrow hover:bg-white/90">
                       <Phone className="h-3.5 w-3.5" /> Contact Office
@@ -1217,7 +1392,7 @@ export default function ParentDashboard() {
     <ParentChildContext.Provider value={{ activeChild, linkedStudents, childIdx, setChildIdx }}>
       <div className="flex flex-col h-full space-y-4">
         {/* GLOBAL MULTI-CHILD SWITCHER */}
-        <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl sticky top-4 z-40 backdrop-blur-md">
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
           <div className="flex items-center gap-2">
             <span className="label-eyebrow text-indigo-700 dark:text-indigo-300 ml-2">Academic Year:</span>
             <select value={academicYear} onChange={(e) => { setAcademicYear(e.target.value); setChildIdx(0); }} className="h-9 px-3 rounded-xl border border-indigo-500/30 bg-card text-sm font-bold text-indigo-700 dark:text-indigo-300">
@@ -1226,12 +1401,12 @@ export default function ParentDashboard() {
           </div>
           
           {yearFilteredStudents.length > 0 && (
-            <div className="flex items-center gap-3">
-              <span className="label-eyebrow text-indigo-700 dark:text-indigo-300">Viewing Child:</span>
-              <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full sm:w-auto overflow-hidden">
+              <span className="label-eyebrow text-indigo-700 dark:text-indigo-300 shrink-0 ml-2 sm:ml-0">Viewing Child:</span>
+              <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-hide w-full max-w-[100vw] pr-4 sm:pr-0">
                 {yearFilteredStudents.map((c, i) => (
                   <button key={c.id} onClick={() => setChildIdx(i)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all whitespace-nowrap ${childIdx === i ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/20' : 'bg-card border-border text-muted-foreground hover:bg-muted'}`}>
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all whitespace-nowrap shrink-0 ${childIdx === i ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/20' : 'bg-card border-border text-muted-foreground hover:bg-muted'}`}>
                     <span className="font-bold text-sm">{c.name?.split(' ')[0] || 'Child'}</span>
                     <span className="label-eyebrow text-[10px] opacity-70">({c.className}{c.section ? `-${c.section}` : ''})</span>
                   </button>
@@ -1257,6 +1432,7 @@ export default function ParentDashboard() {
             <Route path="support"       element={<Support />} />
             <Route path="messages"      element={<Messages />} />
             <Route path="diary"         element={<ParentDiaryPage />} />
+            <Route path="class-timetable" element={<ClassTimetable />} />
             <Route path="exam-timetable" element={<ExamTimetable />} />
             <Route path="messaging"     element={<TeacherMessaging />} />
             <Route path="gps"           element={<GPSTracking />} />

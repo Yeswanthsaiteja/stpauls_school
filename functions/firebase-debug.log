@@ -1,0 +1,115 @@
+[debug] [2026-07-20T17:49:13.972Z] ----------------------------------------------------------------------
+[debug] [2026-07-20T17:49:13.974Z] Command:       /usr/local/bin/node /Users/yeswanthsaitejasurada/.npm/_npx/ba4f1959e38407b5/node_modules/.bin/firebase deploy --only functions:proxyImage
+[debug] [2026-07-20T17:49:13.974Z] CLI Version:   15.24.0
+[debug] [2026-07-20T17:49:13.974Z] Platform:      darwin
+[debug] [2026-07-20T17:49:13.974Z] Node Version:  v22.12.0
+[debug] [2026-07-20T17:49:13.974Z] Detected Agent: antigravity
+[debug] [2026-07-20T17:49:13.974Z] Time:          Mon Jul 20 2026 23:19:13 GMT+0530 (India Standard Time)
+[debug] [2026-07-20T17:49:13.975Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-07-20T17:49:13.982Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[debug] [2026-07-20T17:49:14.848Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-07-20T17:49:14.848Z] > authorizing via signed-in user (yeswanthsaiteja02@gmail.com)
+[debug] [2026-07-20T17:49:14.848Z] [iam] checking project stpauls-erp for permissions ["cloudfunctions.functions.create","cloudfunctions.functions.delete","cloudfunctions.functions.get","cloudfunctions.functions.list","cloudfunctions.functions.update","cloudfunctions.operations.get","firebase.projects.get"]
+[debug] [2026-07-20T17:49:14.849Z] Checked if tokens are valid: false, expires at: 1784282897118
+[debug] [2026-07-20T17:49:14.849Z] Checked if tokens are valid: false, expires at: 1784282897118
+[debug] [2026-07-20T17:49:14.849Z] > refreshing access token with scopes: []
+[debug] [2026-07-20T17:49:14.850Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-07-20T17:49:14.850Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-07-20T17:49:15.062Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-07-20T17:49:15.062Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[error] Authentication Error: Your credentials are no longer valid. Please run firebase login --reauth
+
+For CI servers and headless environments, generate a new token with firebase login:ci
+[debug] [2026-07-20T17:49:15.064Z] [iam] error while checking permissions, command may fail: Authentication Error: Your credentials are no longer valid. Please run firebase login --reauth
+
+For CI servers and headless environments, generate a new token with firebase login:ci
+[debug] [2026-07-20T17:49:15.064Z] Checked if tokens are valid: true, expires at: 1784573354062
+[debug] [2026-07-20T17:49:15.064Z] Checked if tokens are valid: true, expires at: 1784573354062
+[debug] [2026-07-20T17:49:15.064Z] >>> [apiv2][query] POST https://iam.googleapis.com/v1/projects/stpauls-erp/serviceAccounts/stpauls-erp@appspot.gserviceaccount.com:testIamPermissions [none]
+[debug] [2026-07-20T17:49:15.064Z] >>> [apiv2][body] POST https://iam.googleapis.com/v1/projects/stpauls-erp/serviceAccounts/stpauls-erp@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[debug] [2026-07-20T17:49:15.590Z] <<< [apiv2][status] GET https://firebase-public.firebaseio.com/cli.json 200
+[debug] [2026-07-20T17:49:15.590Z] <<< [apiv2][body] GET https://firebase-public.firebaseio.com/cli.json {"cloudBuildErrorAfter":1594252800000,"cloudBuildWarnAfter":1590019200000,"defaultNode10After":1594252800000,"minVersion":"3.0.5","node8DeploysDisabledAfter":1613390400000,"node8RuntimeDisabledAfter":1615809600000,"node8WarnAfter":1600128000000}
+[warn] ⚠  Unable to fetch the CLI MOTD and remote config. This is not a fatal error, but may indicate an issue with your network connection. 
+[debug] [2026-07-20T17:49:15.593Z] Failed to fetch MOTD Error: EPERM: operation not permitted, open '/Users/yeswanthsaitejasurada/.config/configstore/firebase-tools.json.653615102'
+[debug] [2026-07-20T17:49:16.760Z] <<< [apiv2][status] POST https://iam.googleapis.com/v1/projects/stpauls-erp/serviceAccounts/stpauls-erp@appspot.gserviceaccount.com:testIamPermissions 200
+[debug] [2026-07-20T17:49:16.760Z] <<< [apiv2][body] POST https://iam.googleapis.com/v1/projects/stpauls-erp/serviceAccounts/stpauls-erp@appspot.gserviceaccount.com:testIamPermissions {"permissions":["iam.serviceAccounts.actAs"]}
+[info] 
+[info] === Deploying to 'stpauls-erp'...
+[info] 
+[info] i  deploying functions 
+[debug] [2026-07-20T17:49:16.766Z] Checked if tokens are valid: true, expires at: 1784573354062
+[debug] [2026-07-20T17:49:16.766Z] Checked if tokens are valid: true, expires at: 1784573354062
+[debug] [2026-07-20T17:49:16.766Z] >>> [apiv2][query] GET https://cloudresourcemanager.googleapis.com/v1/projects/stpauls-erp [none]
+[debug] [2026-07-20T17:49:18.164Z] <<< [apiv2][status] GET https://cloudresourcemanager.googleapis.com/v1/projects/stpauls-erp 200
+[debug] [2026-07-20T17:49:18.164Z] <<< [apiv2][body] GET https://cloudresourcemanager.googleapis.com/v1/projects/stpauls-erp {"projectNumber":"470826389136","projectId":"stpauls-erp","lifecycleState":"ACTIVE","name":"stpauls-erp","labels":{"firebase":"enabled","firebase-core":"disabled"},"createTime":"2026-04-18T18:11:54.692Z"}
+[info] i  functions: preparing codebase default for deployment 
+[info] i  functions: ensuring required API cloudfunctions.googleapis.com is enabled... 
+[info] i  functions: ensuring required API cloudbuild.googleapis.com is enabled... 
+[info] i  artifactregistry: ensuring required API artifactregistry.googleapis.com is enabled... 
+[debug] [2026-07-20T17:49:18.167Z] Checked if tokens are valid: true, expires at: 1784573354062
+[debug] [2026-07-20T17:49:18.167Z] Checked if tokens are valid: true, expires at: 1784573354062
+[debug] [2026-07-20T17:49:18.168Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/stpauls-erp/adminSdkConfig [none]
+[debug] [2026-07-20T17:49:19.243Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/stpauls-erp/adminSdkConfig 200
+[debug] [2026-07-20T17:49:19.243Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/stpauls-erp/adminSdkConfig {"projectId":"stpauls-erp","databaseURL":"https://stpauls-erp-default-rtdb.asia-southeast1.firebasedatabase.app","storageBucket":"stpauls-erp.firebasestorage.app"}
+[debug] [2026-07-20T17:49:19.244Z] Checked if tokens are valid: true, expires at: 1784573354062
+[debug] [2026-07-20T17:49:19.245Z] Checked if tokens are valid: true, expires at: 1784573354062
+[debug] [2026-07-20T17:49:19.245Z] >>> [apiv2][query] GET https://runtimeconfig.googleapis.com/v1beta1/projects/stpauls-erp/configs [none]
+[debug] [2026-07-20T17:49:19.941Z] <<< [apiv2][status] GET https://runtimeconfig.googleapis.com/v1beta1/projects/stpauls-erp/configs 200
+[debug] [2026-07-20T17:49:19.941Z] <<< [apiv2][body] GET https://runtimeconfig.googleapis.com/v1beta1/projects/stpauls-erp/configs {}
+[debug] [2026-07-20T17:49:19.944Z] Validating nodejs source
+[warn] ⚠  functions: Runtime Node.js 20 was deprecated on 2026-04-30 and will be decommissioned on 2026-10-30, after which you will not be able to deploy without upgrading. Consider upgrading now to avoid disruption. See https://cloud.google.com/functions/docs/runtime-support for full details on the lifecycle policy 
+[warn] ⚠  functions: package.json indicates an outdated version of firebase-functions. Please upgrade using npm install --save firebase-functions@latest in your functions directory. 
+[debug] [2026-07-20T17:49:20.330Z] > [functions] package.json contents: {
+  "name": "functions",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "firebase-admin": "^13.10.0",
+    "firebase-functions": "^7.2.5"
+  }
+}
+[debug] [2026-07-20T17:49:20.331Z] Building nodejs source
+[info] i  functions: Loading and analyzing source code for codebase default to determine what to deploy 
+[debug] [2026-07-20T17:49:20.331Z] Could not find functions.yaml. Must use http discovery
+[debug] [2026-07-20T17:49:20.335Z] Found firebase-functions binary at '/Users/yeswanthsaitejasurada/Documents/stpauls_school/functions/node_modules/.bin/firebase-functions'
+[debug] [2026-07-20T17:49:20.338Z] Failed to call quitquitquit. This often means the server failed to start fetch failed {}
+[info] Serving at port 8068
+
+[debug] [2026-07-20T17:49:30.353Z] TypeError: fetch failed
+    at node:internal/deps/undici/undici:13484:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Object.detectFromPort (/Users/yeswanthsaitejasurada/.npm/_npx/ba4f1959e38407b5/node_modules/firebase-tools/lib/deploy/functions/runtimes/discovery/index.js:67:19)
+    at async Delegate.discoverBuild (/Users/yeswanthsaitejasurada/.npm/_npx/ba4f1959e38407b5/node_modules/firebase-tools/lib/deploy/functions/runtimes/node/index.js:193:34)
+    at async loadCodebases (/Users/yeswanthsaitejasurada/.npm/_npx/ba4f1959e38407b5/node_modules/firebase-tools/lib/deploy/functions/prepare.js:488:33)
+    at async prepare (/Users/yeswanthsaitejasurada/.npm/_npx/ba4f1959e38407b5/node_modules/firebase-tools/lib/deploy/functions/prepare.js:168:24)
+    at async chain (/Users/yeswanthsaitejasurada/.npm/_npx/ba4f1959e38407b5/node_modules/firebase-tools/lib/deploy/index.js:105:9)
+    at async deploy (/Users/yeswanthsaitejasurada/.npm/_npx/ba4f1959e38407b5/node_modules/firebase-tools/lib/deploy/index.js:184:9)
+[error] 
+[error] Error: An unexpected error has occurred.
+[debug] [2026-07-20T17:49:30.624Z] Error: EPERM: operation not permitted, open '/Users/yeswanthsaitejasurada/.config/configstore/firebase-tools.json.2348414821'
+    at Object.openSync (node:fs:561:18)
+    at Function.writeFileSync [as sync] (/Users/yeswanthsaitejasurada/.npm/_npx/ba4f1959e38407b5/node_modules/write-file-atomic/index.js:205:13)
+    at set all (/Users/yeswanthsaitejasurada/.npm/_npx/ba4f1959e38407b5/node_modules/configstore/index.js:61:20)
+    at Configstore.delete (/Users/yeswanthsaitejasurada/.npm/_npx/ba4f1959e38407b5/node_modules/configstore/index.js:101:12)
+    at process.<anonymous> (/Users/yeswanthsaitejasurada/.npm/_npx/ba4f1959e38407b5/node_modules/firebase-tools/lib/bin/cli.js:95:45)
+    at process.emit (node:events:536:35)
+    at process.exit (node:internal/process/per_thread:182:15)
+    at Timeout._onTimeout (/Users/yeswanthsaitejasurada/.npm/_npx/ba4f1959e38407b5/node_modules/firebase-tools/lib/errorOut.js:20:17)
+    at listOnTimeout (node:internal/timers:594:17)
+    at process.processTimers (node:internal/timers:529:7)
+[error] 
+[error] Error: An unexpected error has occurred.

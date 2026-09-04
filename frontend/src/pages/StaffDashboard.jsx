@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import {
   Bell, Save, Send, Plus, RefreshCw,
-  Sparkles, Edit3, X, CheckSquare, Square,
+  Sparkles, Edit3, X, CheckSquare, Square, Trash2,
   Loader2, Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -22,7 +22,7 @@ import { listStudents, updateStudent } from '../services/firebase/studentsServic
 import { listEmployees, listLeaveRequests, addLeaveRequest } from '../services/firebase/employeesService';
 import { getAttendance, saveAttendance } from '../services/firebase/attendanceService';
 import { listHolidays } from '../services/firebase/holidaysService';
-import { listSubjects, listTopics, updateTopic, listClasses, listExamSetups, bulkSaveResults, listResults } from '../services/firebase/academicService';
+import { listSubjects, listTopics, updateTopic, addTopic, deleteTopic, listClasses, listExamSetups, bulkSaveResults, listResults } from '../services/firebase/academicService';
 import { calcGrade } from '../lib/utils';
 import { listAnnouncements, sendMessage, subscribeMessages, listDiaryEntries, addDiaryEntry } from '../services/firebase/communicationService';
 import { addNotification } from '../services/firebase/notificationsService';
@@ -52,8 +52,8 @@ function deriveAssignments(fullName, classes, subjects) {
   const myClassRecords = classes.filter(c => c.teacher1 === fullName || c.teacher2 === fullName);
   const myClass = myClassRecords[0]?.name || null; // primary class (for backward compat)
 
-  // Subjects this teacher is assigned to
-  const teachingSubjects = subjects.filter(s => s.teacherId === fullName);
+  // Subjects this teacher is assigned to (primary or optional)
+  const teachingSubjects = subjects.filter(s => s.teacherId === fullName || s.optionalTeacherId === fullName);
 
   // All class names from class-teacher records + subject records (for marks)
   const seen = new Set();
@@ -462,15 +462,23 @@ function MarksTab({ assignments, allStudents }) {
   const dynamicCalcGrade = (num, config) => {
     if (!config || config.isGradeOnly) return '—';
     const scale = config.gradingScale || [];
-    for (const r of scale) {
-      if (num >= r.min && num <= r.max) return r.grade;
+    const min = config.minMarks !== undefined ? config.minMarks : 35;
+    
+    if (num < min) return 'F';
+    
+    if (scale.length > 0) {
+      for (const r of scale) {
+        if (num >= r.min && num <= r.max) return r.grade;
+      }
+      return '—';
     }
-    return '—';
+    
+    return num >= min ? 'P' : 'F';
   };
 
   const summary = (() => {
     if (examConfig?.isGradeOnly) return { avg: '—', top: '—', low: '—' };
-    const entries = Object.values(marks).map(Number).filter(x => !isNaN(x) && x !== 0);
+    const entries = Object.values(marks).filter(v => v !== '' && v.toString().toUpperCase() !== 'AB').map(Number).filter(x => !isNaN(x));
     if (!entries.length) return { avg: 0, top: 0, low: 0 };
     return { avg: Math.round(entries.reduce((a, x) => a + x, 0) / entries.length), top: Math.max(...entries), low: Math.min(...entries) };
   })();
@@ -484,17 +492,26 @@ function MarksTab({ assignments, allStudents }) {
     if (!entries.length) return toast.error('Enter at least one mark');
     if (saving) return; setSaving(true);
     try {
-      const payload = entries.map(([studentId, m]) => {
+      const payload = [];
+      for (const [studentId, m] of entries) {
         const student = allStudents.find(s => s.id === studentId);
         const isGradeOnly = examConfig?.isGradeOnly;
-        const num = isGradeOnly ? null : Number(m);
-        const finalGrade = isGradeOnly ? m : dynamicCalcGrade(num, examConfig);
-        return { 
+        let num = null;
+        if (!isGradeOnly) {
+          num = m.toString().toUpperCase() === 'AB' ? 'AB' : Number(m);
+        }
+        if (!isGradeOnly && num !== 'AB' && num > dynamicTotalMarks) {
+          toast.error(`Marks cannot exceed ${dynamicTotalMarks} for ${student?.fullName}`);
+          setSaving(false);
+          return;
+        }
+        const finalGrade = isGradeOnly ? m : (num === 'AB' ? 'AB' : dynamicCalcGrade(num, examConfig));
+        payload.push({ 
           studentId, studentName: student?.fullName, subjectId, subject: subject?.name, 
           examType: activeExamName, marks: num, totalMarks: dynamicTotalMarks, 
           grade: finalGrade, className, section 
-        };
-      });
+        });
+      }
       await bulkSaveResults(payload);
       toast.success(`Saved ${payload.length} results for ${subject?.name} — ${activeExamName}`);
     } catch (e) {
@@ -562,7 +579,7 @@ function MarksTab({ assignments, allStudents }) {
           </select>
         </div>
         <div>
-          <label className="label-eyebrow text-muted-foreground">Total Marks / Mode</label>
+          <label className="label-eyebrow text-muted-foreground">Maximum Marks / Mode</label>
           <div className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm flex items-center text-muted-foreground">
             {examConfig?.isGradeOnly ? 'Grade Only' : dynamicTotalMarks}
           </div>
@@ -595,7 +612,7 @@ function MarksTab({ assignments, allStudents }) {
               {rows.map(s => {
                  const m = marks[s.id] ?? '';
                  const isGradeOnly = examConfig?.isGradeOnly;
-                 const grade = isGradeOnly ? m : (m !== '' ? dynamicCalcGrade(Number(m), examConfig) : '—');
+                 const grade = isGradeOnly ? m : (m !== '' ? (m.toString().toUpperCase() === 'AB' ? 'AB' : dynamicCalcGrade(Number(m), examConfig)) : '—');
                  return (
                    <tr key={s.id} className="border-t border-border hover:bg-muted/30">
                      <td className="p-2 font-mono text-xs font-bold">{s.admissionNo}</td>
@@ -608,13 +625,14 @@ function MarksTab({ assignments, allStudents }) {
                            {(examConfig.gradeOptions || []).map(g => <option key={g} value={g}>{g}</option>)}
                          </select>
                        ) : (
-                         <input type="number" min={0} max={dynamicTotalMarks} value={m}
-                           onChange={e => setMarks(mm => ({ ...mm, [s.id]: e.target.value }))}
+                         <input type="text" value={m}
+                           onChange={e => setMarks(mm => ({ ...mm, [s.id]: e.target.value.toUpperCase() }))}
+                           placeholder="e.g. 85, AB"
                            className="w-24 h-9 px-3 rounded-xl border border-border bg-card text-sm" />
                        )}
                      </td>
                      <td className="p-2">
-                       <span className={`px-2.5 py-1 rounded-full label-eyebrow ${grade === '—' || grade === '' ? 'bg-muted text-muted-foreground' : grade === 'F' ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>{grade || '—'}</span>
+                       <span className={`px-2.5 py-1 rounded-full label-eyebrow ${grade === '—' || grade === '' ? 'bg-muted text-muted-foreground' : (grade === 'F' || grade === 'AB') ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>{grade === 'AB' ? 'Absent' : (grade || '—')}</span>
                      </td>
                    </tr>
                  );
@@ -641,6 +659,36 @@ function TopicsTab({ assignments, allSubjects, staffName }) {
   const [selSubject, setSelSubject] = useState(null);
   const [loading, setLoading] = useState(false);
   const [toggling, setToggling] = useState({});
+  const [addModal, setAddModal] = useState(false);
+  const [topicForm, setTopicForm] = useState({ topicName: '', description: '', periods: 1, status: 'NOT_STARTED', startDate: '', endDate: '' });
+  const [adding, setAdding] = useState(false);
+
+  const handleStatusChange = async (topic, newStatus) => {
+    if (toggling[topic.id]) return;
+    setToggling(p => ({ ...p, [topic.id]: true }));
+    try {
+      const payload = {
+        status: newStatus,
+        [newStatus === 'COMPLETED' ? 'completedBy' : 'inProgressBy']: user?.name || 'Staff'
+      };
+      await updateTopic(topic.id, payload);
+      setTopics(prev => prev.map(t => t.id === topic.id ? { ...t, ...payload } : t));
+    } catch {
+      toast.error('Failed to update status');
+    }
+    setToggling(p => ({ ...p, [topic.id]: false }));
+  };
+
+  const handleDeleteTopic = async (topic) => {
+    if (!window.confirm(`Delete topic "${topic.topicName || topic.name || 'Untitled'}"?`)) return;
+    try {
+      await deleteTopic(topic.id);
+      setTopics(prev => prev.filter(t => t.id !== topic.id));
+      toast.success('Topic removed');
+    } catch {
+      toast.error('Failed to remove topic');
+    }
+  };
 
   useEffect(() => { if (mySubjects.length > 0 && !selSubject) setSelSubject(mySubjects[0]); }, [mySubjects.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -674,6 +722,21 @@ function TopicsTab({ assignments, allSubjects, staffName }) {
     setToggling(p => ({ ...p, [topic.id]: false }));
   };
 
+  const handleAddTopic = async () => {
+    if (!topicForm.topicName.trim()) return toast.error('Topic name required');
+    setAdding(true);
+    try {
+      const row = await addTopic({ subjectId: selSubject.id, ...topicForm });
+      setTopics(prev => [...prev, row]);
+      toast.success('Topic added successfully');
+      setAddModal(false);
+      setTopicForm({ topicName: '', description: '', periods: 1, status: 'NOT_STARTED', startDate: '', endDate: '' });
+    } catch {
+      toast.error('Failed to add topic');
+    }
+    setAdding(false);
+  };
+
   const completed = topics.filter(t => t.status === 'COMPLETED').length;
   const inProgress = topics.filter(t => t.status === 'IN_PROGRESS').length;
 
@@ -698,10 +761,15 @@ function TopicsTab({ assignments, allSubjects, staffName }) {
         <div className="space-y-2">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="label-eyebrow text-muted-foreground">{selSubject.name} · {topics.length} topic(s)</div>
-            <div className="flex gap-2 text-xs">
-              <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 font-bold">{completed} done</span>
-              <span className="px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 font-bold">{inProgress} in progress</span>
-              <span className="px-2.5 py-1 rounded-full bg-muted text-muted-foreground font-bold">{topics.length - completed - inProgress} not started</span>
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex gap-2 text-xs">
+                <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 font-bold">{completed} done</span>
+                <span className="px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-600 font-bold">{inProgress} in progress</span>
+                <span className="px-2.5 py-1 rounded-full bg-muted text-muted-foreground font-bold">{topics.length - completed - inProgress} not started</span>
+              </div>
+              <button onClick={() => setAddModal(true)} className="h-8 px-3 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center gap-1">
+                <Plus className="h-3.5 w-3.5" /> Add Topic
+              </button>
             </div>
           </div>
           {/* Progress bar */}
@@ -721,21 +789,36 @@ function TopicsTab({ assignments, allSubjects, staffName }) {
                 const cfg = TOPIC_STATE_CONFIG[status] || TOPIC_STATE_CONFIG.NOT_STARTED;
                 const Icon = cfg.icon;
                 return (
-                  <div key={t.id || i} className={`flex items-start gap-3 p-3 rounded-2xl border transition-colors ${cfg.bg}`}>
-                    <button onClick={() => cycleStatus(t)} disabled={toggling[t.id]}
-                      className={`flex-shrink-0 mt-0.5 ${cfg.color}`} title="Click to cycle status">
-                      {toggling[t.id] ? <Loader2 className="h-5 w-5 animate-spin" /> : <Icon className="h-5 w-5" />}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <div className={`font-bold text-sm ${status === 'COMPLETED' ? 'line-through text-muted-foreground' : ''}`}>
-                        {t.topicName || t.title || t.name || '(Untitled topic)'}
+                  <div key={t.id || i} className={`flex items-start justify-between gap-3 p-3 rounded-2xl border transition-colors ${cfg.bg}`}>
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      <div className={`flex-shrink-0 mt-0.5 ${cfg.color}`}>
+                        {toggling[t.id] ? <Loader2 className="h-5 w-5 animate-spin" /> : <Icon className="h-5 w-5" />}
                       </div>
-                      {t.description && <div className="text-xs text-muted-foreground mt-0.5">{t.description}</div>}
-                      <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.color} bg-current/10`} style={{ backgroundColor: 'transparent' }}>
-                        {cfg.label}
-                        {status === 'COMPLETED' && t.completedBy && ` · by ${t.completedBy}`}
-                        {status === 'IN_PROGRESS' && t.inProgressBy && ` · ${t.inProgressBy}`}
-                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className={`font-bold text-sm ${status === 'COMPLETED' ? 'line-through text-muted-foreground' : ''}`}>
+                          {t.topicName || t.title || t.name || '(Untitled topic)'}
+                        </div>
+                        {t.description && <div className="text-xs text-muted-foreground mt-0.5">{t.description}</div>}
+                        <div className="mt-2 text-[10px] text-muted-foreground">
+                          {status === 'COMPLETED' && t.completedBy && `Completed by ${t.completedBy}`}
+                          {status === 'IN_PROGRESS' && t.inProgressBy && `In progress by ${t.inProgressBy}`}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <select 
+                        value={status} 
+                        onChange={(e) => handleStatusChange(t, e.target.value)} 
+                        disabled={toggling[t.id]}
+                        className={`h-8 px-2 rounded-xl text-xs font-bold border-none outline-none cursor-pointer ${cfg.color} ${cfg.bg} bg-transparent`}
+                      >
+                        {Object.keys(TOPIC_STATE_CONFIG).map(s => (
+                          <option key={s} value={s}>{TOPIC_STATE_CONFIG[s].label}</option>
+                        ))}
+                      </select>
+                      <button onClick={() => handleDeleteTopic(t)} className="p-1.5 rounded-lg hover:bg-rose-500/10 hover:text-rose-500 text-muted-foreground">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
                 );
@@ -746,6 +829,45 @@ function TopicsTab({ assignments, allSubjects, staffName }) {
       )}
       {!selSubject && mySubjects.length > 0 && (
         <p className="text-center text-muted-foreground py-8 text-sm">Select a subject above to view topics</p>
+      )}
+
+      {addModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm grid place-items-center p-4">
+          <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-card rounded-[2rem] p-6 w-full max-w-md border border-border">
+            <div className="flex items-center justify-between mb-4">
+              <div className="font-display font-black text-xl tracking-tighter">Add Topic</div>
+              <button onClick={() => setAddModal(false)} className="p-2 rounded-xl hover:bg-muted"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="label-eyebrow text-muted-foreground">Topic Name</label>
+                <input value={topicForm.topicName} onChange={e => setTopicForm({ ...topicForm, topicName: e.target.value })} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-background text-sm" placeholder="e.g. Algebra" />
+              </div>
+              <div>
+                <label className="label-eyebrow text-muted-foreground">Description</label>
+                <textarea value={topicForm.description} onChange={e => setTopicForm({ ...topicForm, description: e.target.value })} className="mt-1.5 w-full p-3 rounded-2xl border border-border bg-background text-sm resize-none" rows={3} placeholder="Optional details..." />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label-eyebrow text-muted-foreground">Periods</label>
+                  <input type="number" min={1} value={topicForm.periods} onChange={e => setTopicForm({ ...topicForm, periods: parseInt(e.target.value) || 1 })} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-background text-sm" />
+                </div>
+                <div>
+                  <label className="label-eyebrow text-muted-foreground">Status</label>
+                  <select value={topicForm.status} onChange={e => setTopicForm({ ...topicForm, status: e.target.value })} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-background text-sm">
+                    {TOPIC_STATES.map(s => <option key={s} value={s}>{TOPIC_STATE_CONFIG[s].label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="pt-4 flex gap-2">
+                <button onClick={() => setAddModal(false)} className="flex-1 h-11 rounded-2xl border border-border text-sm font-bold hover:bg-muted">Cancel</button>
+                <button onClick={handleAddTopic} disabled={adding} className="flex-1 h-11 rounded-2xl bg-primary text-primary-foreground text-sm font-bold flex items-center justify-center gap-2">
+                  {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} {adding ? 'Saving...' : 'Save Topic'}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
       )}
     </div>
   );

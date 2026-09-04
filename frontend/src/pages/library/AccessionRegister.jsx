@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Search, FileSpreadsheet, X, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
-import { listBooks, addBook, bulkAddBooks } from '../../services/firebase/libraryService';
+import { listBooks, addBook, bulkAddBooks, updateBook } from '../../services/firebase/libraryService';
 
 export default function AccessionRegister() {
   const [books, setBooks] = useState([]);
@@ -10,6 +10,7 @@ export default function AccessionRegister() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [selectedBook, setSelectedBook] = useState(null);
   const fileInputRef = useRef(null);
 
   const loadData = async () => {
@@ -80,6 +81,7 @@ export default function AccessionRegister() {
             foreignPrice: row[13]?.toString() || '',
             inrPrice: row[14]?.toString() || '',
             remarks: row[15]?.toString() || '',
+            rackInfo: row[16]?.toString() || '',
           };
         }).filter(b => b.title && b.title.trim() !== '' && b.accessionNo && b.accessionNo.trim() !== '');
 
@@ -146,7 +148,7 @@ export default function AccessionRegister() {
               </thead>
               <tbody className="divide-y divide-border">
                 {filtered.map(b => (
-                  <tr key={b.id} className="hover:bg-muted/20 transition-colors">
+                  <tr key={b.id} onClick={() => setSelectedBook(b)} className="hover:bg-muted/20 cursor-pointer transition-colors">
                     <td className="px-5 py-3 text-muted-foreground">{b.slNo || '—'}</td>
                     <td className="px-5 py-3 font-mono font-bold text-primary">{b.accessionNo || '—'}</td>
                     <td className="px-5 py-3 font-bold text-foreground max-w-[250px] truncate" title={b.title}>{b.title || '—'}</td>
@@ -173,6 +175,7 @@ export default function AccessionRegister() {
       )}
 
       {showAdd && <AddBookModal onClose={() => setShowAdd(false)} onAdd={() => { setShowAdd(false); loadData(); }} />}
+      {selectedBook && <BookDetailsModal book={selectedBook} onClose={() => setSelectedBook(null)} onUpdate={() => { setSelectedBook(null); loadData(); }} />}
     </div>
   );
 }
@@ -181,7 +184,7 @@ function AddBookModal({ onClose, onAdd }) {
   const [form, setForm] = useState({
     slNo: '', numberOfBooks: '1', accessionNo: '', callNo: '', author: '',
     title: '', isbn: '', pages: '', publisher: '', placeOfPublication: '',
-    volume: '', edition: '', year: '', foreignPrice: '', inrPrice: '', remarks: ''
+    volume: '', edition: '', year: '', foreignPrice: '', inrPrice: '', remarks: '', rackInfo: ''
   });
   const [saving, setSaving] = useState(false);
 
@@ -219,6 +222,7 @@ function AddBookModal({ onClose, onAdd }) {
               { label: 'Year', key: 'year' },
               { label: 'Price (INR)', key: 'inrPrice' },
               { label: 'Foreign Price', key: 'foreignPrice' },
+              { label: 'Rack Info', key: 'rackInfo' },
               { label: 'Remarks', key: 'remarks' },
             ].map(f => (
               <div key={f.key}>
@@ -237,6 +241,101 @@ function AddBookModal({ onClose, onAdd }) {
           <button form="add-book" type="submit" disabled={saving} className="px-5 h-11 label-eyebrow text-primary-foreground bg-primary hover:opacity-90 disabled:opacity-50 rounded-2xl transition-colors flex items-center gap-2">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Save Book
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BookDetailsModal({ book, onClose, onUpdate }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [form, setForm] = useState({ ...book });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    await updateBook(book.id, form);
+    toast.success("Book details updated");
+    onUpdate();
+  };
+
+  const fields = [
+    { label: 'Accession No', key: 'accessionNo', req: true },
+    { label: 'Title', key: 'title', req: true },
+    { label: 'Author', key: 'author' },
+    { label: 'Sl. No', key: 'slNo' },
+    { label: 'No. of Books', key: 'numberOfBooks' },
+    { label: 'Call No.', key: 'callNo' },
+    { label: 'ISBN', key: 'isbn' },
+    { label: 'Pages', key: 'pages' },
+    { label: 'Publisher', key: 'publisher' },
+    { label: 'Place of Publication', key: 'placeOfPublication' },
+    { label: 'Volume', key: 'volume' },
+    { label: 'Edition', key: 'edition' },
+    { label: 'Year', key: 'year' },
+    { label: 'Price (INR)', key: 'inrPrice' },
+    { label: 'Foreign Price', key: 'foreignPrice' },
+    { label: 'Rack Info', key: 'rackInfo' },
+    { label: 'Remarks', key: 'remarks' },
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="glass-morphism rounded-[2rem] border border-border w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] shadow-2xl">
+        <div className="px-6 py-5 border-b border-border flex items-center justify-between bg-card/50">
+          <h2 className="font-display font-black text-2xl tracking-tight uppercase">
+            {isEditing ? 'Edit Book Details' : 'Book Details'}
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-6 overflow-y-auto thin-scrollbar bg-card">
+          {isEditing ? (
+            <form id="edit-book" onSubmit={handleSubmit} className="grid grid-cols-2 gap-5">
+              {fields.map(f => (
+                <div key={f.key}>
+                  <label className="block label-eyebrow text-muted-foreground mb-1.5">{f.label} {f.req && '*'}</label>
+                  <input
+                    type="text" required={f.req}
+                    value={form[f.key] || ''} onChange={e => setForm({ ...form, [f.key]: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-muted/50 border border-border rounded-2xl focus:ring-2 focus:ring-primary outline-none text-sm"
+                  />
+                </div>
+              ))}
+            </form>
+          ) : (
+            <div className="grid grid-cols-2 gap-y-6 gap-x-4">
+              {fields.map(f => (
+                <div key={f.key}>
+                  <label className="block label-eyebrow text-muted-foreground mb-1">{f.label}</label>
+                  <div className="font-semibold text-sm">{book[f.key] || '—'}</div>
+                </div>
+              ))}
+              <div>
+                <label className="block label-eyebrow text-muted-foreground mb-1">Status</label>
+                <div className={`w-fit px-2.5 py-1 rounded-full label-eyebrow ${
+                  book.status === 'AVAILABLE' ? 'bg-emerald-500/10 text-emerald-600' :
+                  book.status === 'ISSUED' ? 'bg-amber-500/10 text-amber-600' : 'bg-muted text-muted-foreground'
+                }`}>
+                  {book.status || 'AVAILABLE'}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="px-6 py-4 border-t border-border bg-card/50 flex justify-end gap-3">
+          {isEditing ? (
+            <>
+              <button onClick={() => setIsEditing(false)} type="button" className="px-5 h-11 label-eyebrow text-muted-foreground hover:bg-muted rounded-2xl transition-colors">Cancel</button>
+              <button form="edit-book" type="submit" disabled={saving} className="px-5 h-11 label-eyebrow text-primary-foreground bg-primary hover:opacity-90 disabled:opacity-50 rounded-2xl transition-colors flex items-center gap-2">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
+              </button>
+            </>
+          ) : (
+            <button onClick={() => setIsEditing(true)} type="button" className="px-5 h-11 label-eyebrow text-primary-foreground bg-primary hover:opacity-90 rounded-2xl transition-colors flex items-center gap-2">
+              Edit Details
+            </button>
+          )}
         </div>
       </div>
     </div>

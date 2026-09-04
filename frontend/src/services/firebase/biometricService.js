@@ -15,14 +15,15 @@ export async function getBiometricLogsForDate(dateStr) {
   if (!guard()) return [];
   try {
     // dateStr = "2026-06-15", we match timestamps that start with this prefix
-    const snap = await getDocs(collection(db, 'biometric_logs'));
-    return snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(log => {
-        if (!log.timestamp) return false;
-        // timestamp is like "2026-06-15 09:23:44.123456"
-        return String(log.timestamp).startsWith(dateStr);
-      });
+    // by using a string range query: timestamp >= "2026-06-15" and timestamp < "2026-06-15\uf8ff"
+    const endStr = dateStr + '\uf8ff';
+    const q = query(
+      collection(db, 'biometric_logs'),
+      where('timestamp', '>=', dateStr),
+      where('timestamp', '<', endStr)
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch (e) {
     console.error('biometricService: getBiometricLogsForDate error', e);
     return [];
@@ -35,13 +36,14 @@ export async function getBiometricLogsForDate(dateStr) {
 export async function getBiometricLogsForMonth(monthStr) {
   if (!guard()) return [];
   try {
-    const snap = await getDocs(collection(db, 'biometric_logs'));
-    return snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(log => {
-        if (!log.timestamp) return false;
-        return String(log.timestamp).startsWith(monthStr);
-      });
+    const endStr = monthStr + '\uf8ff';
+    const q = query(
+      collection(db, 'biometric_logs'),
+      where('timestamp', '>=', monthStr),
+      where('timestamp', '<', endStr)
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch (e) {
     console.error('biometricService: getBiometricLogsForMonth error', e);
     return [];
@@ -211,7 +213,8 @@ export function computeMonthlyAttendance(employees, logs) {
       totalAbsent: 0,
       totalLate: 0,
       totalEarly: 0,
-      workingDays: 0
+      workingDays: 0,
+      dailyPunches: {}
     };
   }
 
@@ -230,6 +233,10 @@ export function computeMonthlyAttendance(employees, logs) {
 
       if (res.minutesLate > 0) agg[res.id].totalLate += 1;
       if (res.minutesEarly > 0) agg[res.id].totalEarly += 1;
+
+      if (res.punchIn) {
+        agg[res.id].dailyPunches[day] = String(res.punchIn).split(' ')[1].substring(0, 5);
+      }
     }
   }
 

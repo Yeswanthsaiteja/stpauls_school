@@ -7,6 +7,14 @@ import { listStudents } from '../../services/firebase/studentsService';
 import { addNotification } from '../../services/firebase/notificationsService';
 import { toast } from 'sonner';
 
+const formatForDatetimeLocal = (isoString) => {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n) => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 export default function ResultSchedulingPage() {
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -98,7 +106,7 @@ export default function ResultSchedulingPage() {
                     </label>
                     <input 
                       type="datetime-local" 
-                      value={e.releaseDate ? e.releaseDate.slice(0,16) : ''} 
+                      value={formatForDatetimeLocal(e.releaseDate)} 
                       onChange={(ev) => handleUpdateReleaseDate(e.id, new Date(ev.target.value).toISOString())}
                       className="w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary"
                     />

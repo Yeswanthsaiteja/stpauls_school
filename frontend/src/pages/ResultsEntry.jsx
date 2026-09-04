@@ -52,11 +52,14 @@ export default function ResultsEntry() {
   }, [applicableExams, examId]);
 
   useEffect(() => {
-    const clsSubs = subjects.filter(s => s.className === className);
+    const scheduledNames = activeExam?.schedule?.[className]?.map(s => s.subjectName) || [];
+    const clsSubs = subjects.filter(s => s.className === className && scheduledNames.includes(s.name));
     if (clsSubs.length > 0 && (!subjectId || !clsSubs.find(s => s.id === subjectId))) {
       setSubjectId(clsSubs[0].id);
+    } else if (clsSubs.length === 0) {
+      setSubjectId('');
     }
-  }, [className, subjects, subjectId]);
+  }, [className, subjects, subjectId, activeExam]);
 
   useEffect(() => {
     if (!className || !activeExamName || !subjectId) {
@@ -68,7 +71,7 @@ export default function ResultsEntry() {
       const currentSubjectRes = res.filter(r => r.subjectId === subjectId && (r.academicYear || '2026-27') === academicYear);
       const newMarks = {};
       currentSubjectRes.forEach(r => {
-        newMarks[r.studentId] = r.marks;
+        newMarks[r.studentId] = r.marks !== null ? r.marks : (r.grade || '');
       });
       setMarks(newMarks);
     };
@@ -78,7 +81,8 @@ export default function ResultsEntry() {
   const rows    = useMemo(() => students.filter((s) => (s.academicYear || '2026-27') === academicYear && s.className === className && (!section || s.section === section)), [students, className, section, academicYear]);
   const sectionOpts = activeClassObj ? activeClassObj.sections : [];
   const classOpts = classes.map(c => c.name);
-  const filteredSubjects = subjects.filter(s => s.className === className);
+  const scheduledNames = activeExam?.schedule?.[className]?.map(s => s.subjectName) || [];
+  const filteredSubjects = subjects.filter(s => s.className === className && scheduledNames.includes(s.name));
   const subject = subjects.find((s) => s.id === subjectId);
   const examConfig = activeExam?.schedule?.[className]?.find(s => s.subjectName === subject?.name);
   const dynamicTotalMarks = examConfig?.totalMarks || 100;
@@ -86,15 +90,24 @@ export default function ResultsEntry() {
   const dynamicCalcGrade = (num, config) => {
     if (!config || config.isGradeOnly) return '—';
     const scale = config.gradingScale || [];
-    for (const r of scale) {
-      if (num >= r.min && num <= r.max) return r.grade;
+    const rawMin = config.minMarks;
+    const min = (rawMin === undefined || rawMin === null || rawMin === '') ? 35 : Number(rawMin);
+    
+    if (num < min) return 'F';
+    
+    if (scale.length > 0) {
+      for (const r of scale) {
+        if (num >= Number(r.min) && num <= Number(r.max)) return r.grade;
+      }
+      return '—';
     }
-    return '—';
+    
+    return num >= min ? 'P' : 'F';
   };
 
   const summary = useMemo(() => {
     if (examConfig?.isGradeOnly) return { avg: '—', top: '—', low: '—' };
-    const entries = Object.values(marks).map(Number).filter((x) => !isNaN(x));
+    const entries = Object.values(marks).filter(v => v !== null && v !== undefined && v !== '' && v.toString().toUpperCase() !== 'AB').map(Number).filter((x) => !isNaN(x));
     if (!entries.length) return { avg: 0, top: 0, low: 0 };
     return {
       avg: Math.round(entries.reduce((s, x) => s + x, 0) / entries.length),
@@ -115,13 +128,16 @@ export default function ResultsEntry() {
     for (const [studentId, m] of entries) {
       const student = students.find((s) => s.id === studentId);
       const isGradeOnly = examConfig?.isGradeOnly;
-      const num = isGradeOnly ? null : Number(m);
-      if (!isGradeOnly && num > dynamicTotalMarks) {
+      let num = null;
+      if (!isGradeOnly) {
+        num = m.toString().toUpperCase() === 'AB' ? 'AB' : Number(m);
+      }
+      if (!isGradeOnly && num !== 'AB' && num > dynamicTotalMarks) {
         toast.error(`Marks cannot exceed ${dynamicTotalMarks} for ${student?.fullName}`);
         hasError = true;
         break;
       }
-      const grade = isGradeOnly ? m : dynamicCalcGrade(num, examConfig);
+      const grade = isGradeOnly ? m : (num === 'AB' ? 'AB' : dynamicCalcGrade(num, examConfig));
       payload.push({ studentId, studentName: student?.fullName, subjectId, subject: subject?.name, examType: activeExamName, marks: num, totalMarks: dynamicTotalMarks, grade, className, section, academicYear });
     }
     
@@ -183,7 +199,7 @@ export default function ResultsEntry() {
           </select>
         </div>
         <div>
-          <label className="label-eyebrow text-muted-foreground">Total Marks / Mode</label>
+          <label className="label-eyebrow text-muted-foreground">Maximum Marks / Mode</label>
           <div className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-card text-sm flex items-center text-muted-foreground">
             {examConfig?.isGradeOnly ? 'Grade Only' : dynamicTotalMarks}
           </div>
@@ -215,7 +231,7 @@ export default function ResultsEntry() {
               {rows.map((s) => {
                 const m = marks[s.id] || '';
                 const isGradeOnly = examConfig?.isGradeOnly;
-                const grade = isGradeOnly ? m : (m !== '' ? dynamicCalcGrade(Number(m), examConfig) : '—');
+                const grade = isGradeOnly ? m : (m !== '' ? (m.toString().toUpperCase() === 'AB' ? 'AB' : dynamicCalcGrade(Number(m), examConfig)) : '—');
                 return (
                   <motion.tr key={s.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border-t border-border hover:bg-muted/30">
                     <td className="p-2 font-mono text-xs font-bold">{s.admissionNo}</td>
@@ -228,10 +244,10 @@ export default function ResultsEntry() {
                           {(examConfig.gradeOptions || []).map(g => <option key={g} value={g}>{g}</option>)}
                         </select>
                       ) : (
-                        <input type="number" min={0} max={dynamicTotalMarks} value={m} onChange={(e) => setMarks((mm) => ({ ...mm, [s.id]: e.target.value }))} className="w-24 h-9 px-3 rounded-xl border border-border bg-card text-sm" data-testid={`mark-${s.id}`} />
+                        <input type="text" value={m} onChange={(e) => setMarks((mm) => ({ ...mm, [s.id]: e.target.value.toUpperCase() }))} className="w-24 h-9 px-3 rounded-xl border border-border bg-card text-sm" placeholder="e.g. 85, AB" data-testid={`mark-${s.id}`} />
                       )}
                     </td>
-                    <td className="p-2"><span className={`px-2.5 py-1 rounded-full label-eyebrow ${grade === '—' || grade === '' ? 'bg-muted text-muted-foreground' : grade === 'F' ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>{grade || '—'}</span></td>
+                    <td className="p-2"><span className={`px-2.5 py-1 rounded-full label-eyebrow ${grade === '—' || grade === '' ? 'bg-muted text-muted-foreground' : (grade === 'F' || grade === 'AB') ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>{grade === 'AB' ? 'Absent' : (grade || '—')}</span></td>
                   </motion.tr>
                 );
               })}

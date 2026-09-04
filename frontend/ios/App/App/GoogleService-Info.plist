@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>470826389136-0sd89hlgqf2d5ij2n0l9lukk5sqive2u.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.470826389136-0sd89hlgqf2d5ij2n0l9lukk5sqive2u</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>470826389136-dh76928kihqlosqiri6h8eiqb3t9l8uj.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyAqLv2XDFgs9aMmxDh74LVHqDCipX3zhG0</string>
+	<key>GCM_SENDER_ID</key>
+	<string>470826389136</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.stpauls.school.test</string>
+	<key>PROJECT_ID</key>
+	<string>stpauls-erp</string>
+	<key>STORAGE_BUCKET</key>
+	<string>stpauls-erp.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:470826389136:ios:a153c07ea5b5120f425215</string>
+	<key>DATABASE_URL</key>
+	<string>https://stpauls-erp-default-rtdb.asia-southeast1.firebasedatabase.app</string>
+</dict>
+</plist>

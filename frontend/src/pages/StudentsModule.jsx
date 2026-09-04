@@ -5,8 +5,11 @@ import { Users, FilePlus2, UserMinus2, Award, MessageCircle, Search, Upload, Loa
 import { useTranslation } from 'react-i18next';
 import { listStudents, addStudent, searchStudents } from '../services/firebase/studentsService';
 import { getWhatsAppUrl } from '../lib/utils';
+import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
 import { uploadToStorage } from '../lib/storageUtils';
+
+import HouseAssignment from './students/HouseAssignment';
 
 const STEPS = ['personal', 'contact', 'parentInfo', 'academic', 'photo'];
 
@@ -15,14 +18,21 @@ function Landing() {
   const navigate = useNavigate();
   const [recents, setRecents] = useState([]);
   useEffect(() => { listStudents({ status: 'ACTIVE' }).then((s) => setRecents(s.slice(0, 5))); }, []);
-  const cards = [
-    { icon: Users, label: t('studentDirectory'), sub: 'Browse · search · filter', to: '/dashboard/students/directory', color: 'from-indigo-500 to-violet-500' },
-    { icon: FilePlus2, label: t('admissionForm'), sub: 'Multi-step wizard', to: '/dashboard/students/admission-full', color: 'from-emerald-500 to-teal-500' },
-    { icon: UserMinus2, label: t('studentRemoval'), sub: 'TC + deactivation', to: '/dashboard/students/removal', color: 'from-amber-500 to-orange-500' },
-    { icon: Search, label: 'Edit Student', sub: 'Search & Update', to: '/dashboard/students/edit-search', color: 'from-blue-500 to-indigo-500' },
-    { icon: Award, label: t('certificates'), sub: 'TC · Bonafide · more', to: '/dashboard/students/certificates', color: 'from-rose-500 to-pink-500' },
-    { icon: Upload, label: t('importData') || 'Import Excel / CSV', sub: 'Bulk import student data', to: '/dashboard/bulk-import', color: 'from-cyan-500 to-sky-500' },
+  const { profile } = useAuth();
+  const p = profile?.permissions || [];
+  const isAdmin = profile?.role === 'SCHOOL_ADMIN' || profile?.role === 'ADMIN';
+  const canAccess = (key) => isAdmin || p.includes('students') || p.includes(key);
+
+  const allCards = [
+    { icon: Users, label: t('studentDirectory'), sub: 'Browse · search · filter', to: '/dashboard/students/directory', color: 'from-indigo-500 to-violet-500', reqKey: 'students.directory' },
+    { icon: FilePlus2, label: t('admissionForm'), sub: 'Multi-step wizard', to: '/dashboard/students/admission-full', color: 'from-emerald-500 to-teal-500', reqKey: 'students.admission-full' },
+    { icon: UserMinus2, label: t('studentRemoval'), sub: 'TC + deactivation', to: '/dashboard/students/removal', color: 'from-amber-500 to-orange-500', reqKey: 'students.removal' },
+    { icon: Search, label: 'Edit Student', sub: 'Search & Update', to: '/dashboard/students/edit-search', color: 'from-blue-500 to-indigo-500', reqKey: 'students.edit' },
+    { icon: Award, label: t('certificates'), sub: 'TC · Bonafide · more', to: '/dashboard/students/certificates', color: 'from-rose-500 to-pink-500', reqKey: 'students.certificates' },
+    { icon: Upload, label: t('importData') || 'Import Excel / CSV', sub: 'Bulk import student data', to: '/dashboard/bulk-import', color: 'from-cyan-500 to-sky-500', reqKey: 'bulk-import' },
+    { icon: Award, label: 'House Assignment', sub: 'Assign color houses', to: '/dashboard/students/houses', color: 'from-purple-500 to-fuchsia-500', reqKey: 'students.houses' },
   ];
+  const cards = allCards.filter(c => canAccess(c.reqKey));
   return (
     <div className="space-y-6" data-testid="students-module">
       <h1 className="font-display font-black text-3xl sm:text-4xl tracking-tighter uppercase">{t('students')}</h1>
@@ -34,11 +44,13 @@ function Landing() {
             <div className="label-eyebrow text-muted-foreground mt-1">{c.sub}</div>
           </motion.button>
         ))}
-        <motion.button onClick={() => navigate('/dashboard/students/rejoin')} whileHover={{ y: -5, scale: 1.02 }} className="glass-morphism rounded-[2rem] p-5 text-left" data-testid="students-card-Rejoin">
-          <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-500 grid place-items-center text-white"><Users className="h-5 w-5" /></div>
-          <div className="mt-4 font-bold">{t('studentRejoin')}</div>
-          <div className="label-eyebrow text-muted-foreground mt-1">Reactivate alumni</div>
-        </motion.button>
+        {canAccess('students.rejoin') && (
+          <motion.button onClick={() => navigate('/dashboard/students/rejoin')} whileHover={{ y: -5, scale: 1.02 }} className="glass-morphism rounded-[2rem] p-5 text-left" data-testid="students-card-Rejoin">
+            <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-500 grid place-items-center text-white"><Users className="h-5 w-5" /></div>
+            <div className="mt-4 font-bold">{t('studentRejoin')}</div>
+            <div className="label-eyebrow text-muted-foreground mt-1">Reactivate alumni</div>
+          </motion.button>
+        )}
       </div>
 
       <div className="glass-morphism rounded-[2rem] p-5">
@@ -77,16 +89,18 @@ function Landing() {
         </div>
       </div>
 
-      <div className="glass-morphism rounded-[2rem] p-5">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-2xl bg-primary/10 grid place-items-center"><Upload className="h-4 w-4 text-primary" /></div>
-          <div className="flex-1">
-            <div className="font-bold text-sm">{t('bulkImportCsv')}</div>
-            <div className="label-eyebrow text-muted-foreground">Drag & drop or browse · 700+ records supported</div>
+      {canAccess('bulk-import') && (
+        <div className="glass-morphism rounded-[2rem] p-5">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-primary/10 grid place-items-center"><Upload className="h-4 w-4 text-primary" /></div>
+            <div className="flex-1">
+              <div className="font-bold text-sm">{t('bulkImportCsv')}</div>
+              <div className="label-eyebrow text-muted-foreground">Drag & drop or browse · 700+ records supported</div>
+            </div>
+            <button onClick={() => navigate('/dashboard/bulk-import')} data-testid="bulk-import-btn" className="px-4 py-2 rounded-2xl bg-foreground text-background label-eyebrow">{t('openImporter')}</button>
           </div>
-          <button onClick={() => navigate('/dashboard/bulk-import')} data-testid="bulk-import-btn" className="px-4 py-2 rounded-2xl bg-foreground text-background label-eyebrow">{t('openImporter')}</button>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -370,6 +384,7 @@ export default function StudentsModule() {
       <Route path="manage" element={<Manage />} />
       <Route path="certificates" element={<Manage />} />
       <Route path="edit-search" element={<EditSearch />} />
+      <Route path="houses" element={<HouseAssignment />} />
     </Routes>
   );
 }

@@ -7,11 +7,67 @@ import { useTenant } from '../contexts/TenantContext';
 import { Sun, Moon, Globe, User as UserIcon, Building2, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { getStudent } from '../services/firebase/studentsService';
+import { auth, functions } from '../lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+
 export default function AccountSettings() {
   const { profile } = useAuth();
   const { theme, toggle } = useTheme();
   const { tenant } = useTenant();
   const { t, i18n } = useTranslation();
+
+  const [childPhoto, setChildPhoto] = React.useState(null);
+  
+  const [currentPin, setCurrentPin] = React.useState('');
+  const [newPin, setNewPin] = React.useState('');
+  const [confirmPin, setConfirmPin] = React.useState('');
+  const [isUpdating, setIsUpdating] = React.useState(false);
+
+  React.useEffect(() => {
+    if ((profile?.role?.toLowerCase() === 'parent') && (profile?.linkedStudentId || profile?.linkedStudents?.[0]?.id)) {
+      const studentId = profile?.linkedStudentId || profile?.linkedStudents?.[0]?.id;
+      getStudent(studentId).then(s => {
+        if (s?.photoURL) setChildPhoto(s.photoURL);
+      });
+    }
+  }, [profile]);
+
+  const handlePinUpdate = async () => {
+    if (!currentPin || !newPin || !confirmPin) {
+      toast.error('Please fill all PIN fields');
+      return;
+    }
+    if (newPin !== confirmPin) {
+      toast.error('New PINs do not match');
+      return;
+    }
+    if (newPin.length !== 4) {
+      toast.error('New PIN must be exactly 4 digits');
+      return;
+    }
+    
+    setIsUpdating(true);
+    try {
+      const setNewPinFn = httpsCallable(functions, 'setNewPin');
+      await setNewPinFn({ currentPin, pin: newPin });
+      
+      toast.success('PIN updated successfully');
+      setCurrentPin('');
+      setNewPin('');
+      setConfirmPin('');
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || 'Failed to update PIN. Please check your current PIN.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handlePinChange = (setter) => (e) => {
+    const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+    setter(val);
+  };
 
   return (
     <div className="space-y-6 max-w-3xl" data-testid="settings-page">
@@ -20,7 +76,9 @@ export default function AccountSettings() {
       <motion.div whileHover={{ y: -3 }} className="glass-morphism rounded-[2rem] p-6">
         <div className="flex items-center gap-2 mb-4"><UserIcon className="h-4 w-4" /><div className="label-eyebrow text-muted-foreground">Profile</div></div>
         <div className="flex items-center gap-4">
-          <div className="h-16 w-16 rounded-3xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center text-white font-black text-xl">{(profile?.fullName || 'U')[0]}</div>
+          <div className="h-16 w-16 rounded-3xl bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center text-white font-black text-xl overflow-hidden ring-4 ring-background">
+            {childPhoto ? <img src={childPhoto} alt="Profile" className="h-full w-full object-cover" /> : (profile?.fullName || 'U')[0]}
+          </div>
           <div>
             <div className="font-display font-black text-2xl tracking-tighter">{profile?.fullName || 'User'}</div>
             <div className="label-eyebrow text-muted-foreground mt-1">{profile?.role} · {profile?.designation || profile?.department || ''}</div>
@@ -38,10 +96,10 @@ export default function AccountSettings() {
       <motion.div whileHover={{ y: -3 }} className="glass-morphism rounded-[2rem] p-6">
         <div className="flex items-center gap-2 mb-4"><Building2 className="h-4 w-4" /><div className="label-eyebrow text-muted-foreground">Tenant</div></div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div><div className="label-eyebrow text-muted-foreground">School Name</div><div className="font-bold">{tenant?.name}</div></div>
+          <div><div className="label-eyebrow text-muted-foreground">School Name</div><div className="font-bold">{tenant?.name || "St. Paul's High School"}</div></div>
           <div><div className="label-eyebrow text-muted-foreground">Subscription</div><div className="font-bold">Active</div></div>
-          <div><div className="label-eyebrow text-muted-foreground">Contact</div><div className="font-bold">{tenant?.contactNumber}</div></div>
-          <div><div className="label-eyebrow text-muted-foreground">Email</div><div className="font-bold">{tenant?.email}</div></div>
+          <div><div className="label-eyebrow text-muted-foreground">Contact</div><div className="font-bold">8978186701</div></div>
+          <div><div className="label-eyebrow text-muted-foreground">Email</div><div className="font-bold">saintpaul.sklm@gmail.com</div></div>
         </div>
       </motion.div>
 
@@ -67,13 +125,15 @@ export default function AccountSettings() {
       </div>
 
       <div className="glass-morphism rounded-[2rem] p-6">
-        <div className="flex items-center gap-2 mb-4"><Lock className="h-4 w-4" /><div className="label-eyebrow text-muted-foreground">Change Password</div></div>
+        <div className="flex items-center gap-2 mb-4"><Lock className="h-4 w-4" /><div className="label-eyebrow text-muted-foreground">Change PIN</div></div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <input type="password" placeholder="Current" className="h-11 px-4 rounded-2xl border border-border bg-card text-sm" />
-          <input type="password" placeholder="New" className="h-11 px-4 rounded-2xl border border-border bg-card text-sm" />
-          <input type="password" placeholder="Confirm" className="h-11 px-4 rounded-2xl border border-border bg-card text-sm" />
+          <input type="password" inputMode="numeric" maxLength={4} value={currentPin} onChange={handlePinChange(setCurrentPin)} placeholder="Current PIN" className="h-11 px-4 rounded-2xl border border-border bg-card text-sm text-center tracking-widest font-bold" />
+          <input type="password" inputMode="numeric" maxLength={4} value={newPin} onChange={handlePinChange(setNewPin)} placeholder="New PIN" className="h-11 px-4 rounded-2xl border border-border bg-card text-sm text-center tracking-widest font-bold" />
+          <input type="password" inputMode="numeric" maxLength={4} value={confirmPin} onChange={handlePinChange(setConfirmPin)} placeholder="Confirm PIN" className="h-11 px-4 rounded-2xl border border-border bg-card text-sm text-center tracking-widest font-bold" />
         </div>
-        <button onClick={() => toast.success('Password updated (demo)')} className="mt-3 px-5 h-11 rounded-2xl bg-primary text-primary-foreground label-eyebrow">Update</button>
+        <button disabled={isUpdating} onClick={handlePinUpdate} className="mt-3 px-5 h-11 rounded-2xl bg-primary text-primary-foreground label-eyebrow disabled:opacity-50 disabled:cursor-not-allowed">
+          {isUpdating ? 'Updating...' : 'Update PIN'}
+        </button>
       </div>
     </div>
   );

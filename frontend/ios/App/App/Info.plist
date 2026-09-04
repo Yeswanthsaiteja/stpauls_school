@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>St. Paul's School ERP</string>
+	<string>St. Paul's High School SKLM</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -17,11 +17,30 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>$(MARKETING_VERSION)</string>
+	<string>4.0.5</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.470826389136-0sd89hlgqf2d5ij2n0l9lukk5sqive2u</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
-	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<string>43</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>We need access to the camera to take photos for assignments.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>We use Face ID to securely authenticate you.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>We need access to the photo library to save photos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>We need access to the photo library to upload profile pictures.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -45,36 +64,15 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
-	<!-- Camera — for profile photos and QR scanner -->
-	<key>NSCameraUsageDescription</key>
-	<string>St. Paul's ERP uses the camera to scan QR codes and capture profile photos.</string>
-	<!-- Photo Library — for uploading documents and photos -->
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>St. Paul's ERP needs access to your photo library to upload profile photos and documents.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>St. Paul's ERP needs to save photos and documents to your photo library.</string>
-	<!-- Notifications — for fee reminders, attendance alerts -->
-	<key>NSUserNotificationsUsageDescription</key>
-	<string>St. Paul's ERP sends notifications for fee reminders, attendance updates, and important school announcements.</string>
-	<!-- Face ID — for secure biometric login -->
-	<key>NSFaceIDUsageDescription</key>
-	<string>St. Paul's ERP uses Face ID for quick and secure login.</string>
-	<!-- Microphone — required by some WebView features -->
-	<key>NSMicrophoneUsageDescription</key>
-	<string>St. Paul's ERP may use the microphone for audio features.</string>
-	<!-- App Transport Security — allow backend HTTPS traffic -->
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<false/>
-		<key>NSExceptionDomains</key>
-		<dict>
-			<key>localhost</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<true/>
-			</dict>
-		</dict>
-	</dict>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tez</string>
+		<string>phonepe</string>
+		<string>paytmmp</string>
+		<string>paytm</string>
+		<string>bhim</string>
+		<string>upi</string>
+		<string>gpay</string>
+	</array>
 </dict>
 </plist>

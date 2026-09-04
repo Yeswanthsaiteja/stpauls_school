@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { NavLink } from 'react-router-dom';
 import { Plus, Trash2, Pencil, X, BookOpen, BookMarked, Loader2, RefreshCw } from 'lucide-react';
-import { listSubjects, addSubject, updateSubject, deleteSubject, listTopics, addTopic, updateTopic, deleteTopic } from '../../services/firebase/academicService';
+import { listSubjects, addSubject, updateSubject, deleteSubject, listTopics, addTopic, updateTopic, deleteTopic, listClasses } from '../../services/firebase/academicService';
 import { listEmployees } from '../../services/firebase/employeesService';
 import { CLASS_OPTIONS, SECTION_OPTIONS } from '../../lib/pdfUtils';
 import { toast } from 'sonner';
@@ -16,6 +16,8 @@ export default function SubjectsTopicsCRUD() {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [classes, setClasses] = useState([]);
+  const [filterClass, setFilterClass] = useState('');
   const [active, setActive] = useState(null);
 
   const [subjModal, setSubjModal] = useState(null);
@@ -26,13 +28,26 @@ export default function SubjectsTopicsCRUD() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [subData, topData, empData] = await Promise.all([listSubjects(), listTopics(), listEmployees({ status: 'ACTIVE' })]);
+    const [subData, topData, empData, classData] = await Promise.all([listSubjects(), listTopics(), listEmployees({ status: 'ACTIVE' }), listClasses()]);
     setSubjects(subData);
     setTopics(topData);
     setEmployees(empData);
-    if (!active && subData.length > 0) setActive(subData[0].id);
+    setClasses(classData);
+    
+    setFilterClass(prev => {
+      const targetClass = prev || (classData.length > 0 ? classData[0].name : '');
+      const filteredSubs = subData.filter(s => targetClass ? s.className === targetClass : true);
+      
+      setActive(currentActive => {
+        if (!currentActive && filteredSubs.length > 0) return filteredSubs[0].id;
+        return currentActive;
+      });
+      
+      return targetClass;
+    });
+    
     setLoading(false);
-  }, [active]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -102,11 +117,28 @@ export default function SubjectsTopicsCRUD() {
       <NavLink to=".." className="label-eyebrow text-primary">← Back</NavLink>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Subjects & Topics</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {classes.length > 0 && (
+            <select
+              value={filterClass}
+              onChange={(e) => {
+                const newClass = e.target.value;
+                setFilterClass(newClass);
+                const filteredSubs = subjects.filter(s => newClass ? s.className === newClass : true);
+                setActive(filteredSubs.length > 0 ? filteredSubs[0].id : null);
+              }}
+              className="h-10 px-3 rounded-xl border border-border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+            >
+              <option value="">All Classes</option>
+              {[...new Set(classes.map(c => c.name))].map(cName => (
+                <option key={cName} value={cName}>{cName}</option>
+              ))}
+            </select>
+          )}
           <button onClick={load} className="h-10 w-10 rounded-2xl bg-muted grid place-items-center">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
-          <button onClick={() => { setSubjForm({ name: '', code: '', className: '10th', section: '', teacherId: employees[0]?.fullName || '', type: 'Core' }); setSubjModal('add'); }} data-testid="st-add-subject" className="h-10 px-4 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center gap-2"><Plus className="h-3.5 w-3.5" />Add Subject</button>
+          <button onClick={() => { setSubjForm({ name: '', code: '', className: filterClass || '10th', section: '', teacherId: employees[0]?.fullName || '', type: 'Core' }); setSubjModal('add'); }} data-testid="st-add-subject" className="h-10 px-4 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center gap-2"><Plus className="h-3.5 w-3.5" />Add Subject</button>
         </div>
       </div>
 
@@ -116,7 +148,7 @@ export default function SubjectsTopicsCRUD() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Subject list */}
           <div className="space-y-2">
-            {subjects.map((s) => {
+            {subjects.filter(s => filterClass ? s.className === filterClass : true).map((s) => {
               const myT = topics.filter((t) => t.subjectId === s.id);
               const c = myT.filter((t) => t.status === 'COMPLETED').length;
               return (
@@ -138,7 +170,7 @@ export default function SubjectsTopicsCRUD() {
                 </motion.button>
               );
             })}
-            {subjects.length === 0 && <div className="text-center text-sm text-muted-foreground py-6">No subjects yet.</div>}
+            {subjects.filter(s => filterClass ? s.className === filterClass : true).length === 0 && <div className="text-center text-sm text-muted-foreground py-6">No subjects yet.</div>}
           </div>
 
           {/* Topics panel */}
@@ -188,18 +220,23 @@ export default function SubjectsTopicsCRUD() {
           <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-card rounded-[2rem] p-6 w-full max-w-md border border-border">
             <div className="flex items-center justify-between mb-4"><div className="font-display font-black text-xl tracking-tighter">{subjModal === 'add' ? 'Add Subject' : 'Edit Subject'}</div><button onClick={() => setSubjModal(null)} className="p-2 rounded-xl hover:bg-muted"><X className="h-4 w-4" /></button></div>
             <div className="space-y-3">
-              <input value={subjForm.name} onChange={(e) => setSubjForm({ ...subjForm, name: e.target.value })} placeholder="Subject Name" className="w-full h-11 px-4 rounded-2xl border border-border bg-background text-sm" data-testid="st-subj-name" />
+              <input list="subject-suggestions" value={subjForm.name} onChange={(e) => setSubjForm({ ...subjForm, name: e.target.value })} placeholder="Subject Name" className="w-full h-11 px-4 rounded-2xl border border-border bg-background text-sm" data-testid="st-subj-name" />
               <input value={subjForm.code} onChange={(e) => setSubjForm({ ...subjForm, code: e.target.value })} placeholder="Code" className="w-full h-11 px-4 rounded-2xl border border-border bg-background text-sm" data-testid="st-subj-code" />
               <div className="grid grid-cols-2 gap-2">
                 <select value={subjForm.className} onChange={(e) => setSubjForm({ ...subjForm, className: e.target.value })} className="h-11 px-3 rounded-2xl border border-border bg-background text-sm">{CLASS_OPTIONS.map((c) => <option key={c}>{c}</option>)}</select>
                 <select value={subjForm.section} onChange={(e) => setSubjForm({ ...subjForm, section: e.target.value })} className="h-11 px-3 rounded-2xl border border-border bg-background text-sm"><option value="">All sections</option>{SECTION_OPTIONS.map((c) => <option key={c}>{c}</option>)}</select>
               </div>
-              <select value={subjForm.teacherId} onChange={(e) => setSubjForm({ ...subjForm, teacherId: e.target.value })} className="w-full h-11 px-3 rounded-2xl border border-border bg-background text-sm" data-testid="st-subj-teacher">
-                <option value="">No Teacher Selected</option>
-                {employees.map((e) => <option key={e.id} value={e.fullName}>{e.fullName}</option>)}
-              </select>
+              <input list="employee-suggestions" value={subjForm.teacherId} onChange={(e) => setSubjForm({ ...subjForm, teacherId: e.target.value })} placeholder="Subject Teacher (Search...)" className="w-full h-11 px-4 rounded-2xl border border-border bg-background text-sm" data-testid="st-subj-teacher" />
               <select value={subjForm.type} onChange={(e) => setSubjForm({ ...subjForm, type: e.target.value })} className="w-full h-11 px-3 rounded-2xl border border-border bg-background text-sm">{TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+              <input list="employee-suggestions" value={subjForm.optionalTeacherId || ''} onChange={(e) => setSubjForm({ ...subjForm, optionalTeacherId: e.target.value })} placeholder="Optional Teacher (Optional...)" className="w-full h-11 px-4 rounded-2xl border border-border bg-background text-sm" />
               <button onClick={saveSubject} disabled={saving} className="w-full h-11 rounded-2xl bg-primary text-primary-foreground label-eyebrow disabled:opacity-60" data-testid="st-subj-save">{saving ? 'Saving...' : 'Save Subject'}</button>
+              
+              <datalist id="subject-suggestions">
+                {Array.from(new Set(subjects.map(s => s.name).filter(Boolean))).map((n) => <option key={n} value={n} />)}
+              </datalist>
+              <datalist id="employee-suggestions">
+                {employees.map((e) => <option key={e.id} value={e.fullName} />)}
+              </datalist>
             </div>
           </motion.div>
         </div>

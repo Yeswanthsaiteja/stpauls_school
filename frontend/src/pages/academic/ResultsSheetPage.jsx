@@ -3,6 +3,9 @@ import { NavLink } from 'react-router-dom';
 import { FileText, Loader2, Download, Search } from 'lucide-react';
 import { listClasses, listSubjects, listExamSetups, listResults } from '../../services/firebase/academicService';
 import { listStudents } from '../../services/firebase/studentsService';
+import { calcGrade } from '../../lib/utils';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function ResultsSheetPage() {
   const [classes, setClasses] = useState([]);
@@ -75,9 +78,28 @@ export default function ResultsSheetPage() {
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [students, className, section]);
 
-  const classSubjects = useMemo(() => {
-    return subjects.filter(s => s.className === className);
-  }, [subjects, className]);
+  const scheduledSubjects = useMemo(() => {
+    const scheduledNames = activeExam?.schedule?.[className]?.map(s => s.subjectName) || [];
+    return subjects.filter(s => s.className === className && scheduledNames.includes(s.name));
+  }, [subjects, className, activeExam]);
+
+  const dynamicCalcGrade = (num, config) => {
+    if (!config || config.isGradeOnly) return '—';
+    const scale = config.gradingScale || [];
+    const rawMin = config.minMarks;
+    const min = (rawMin === undefined || rawMin === null || rawMin === '') ? 35 : Number(rawMin);
+    
+    if (num < min) return 'F';
+    
+    if (scale.length > 0) {
+      for (const r of scale) {
+        if (num >= Number(r.min) && num <= Number(r.max)) return r.grade;
+      }
+      return '—';
+    }
+    
+    return num >= min ? 'P' : 'F';
+  };
 
   // Build a tabular map
   // tableData[studentId] = { student, marks: { subjectId: { mark, grade } }, total, maxTotal, percentage }
@@ -98,37 +120,62 @@ export default function ResultsSheetPage() {
     Object.values(data).forEach(row => {
       let t = 0;
       let maxT = 0;
-      classSubjects.forEach(sub => {
+      let hasFailed = false;
+      let allBlank = true;
+
+      scheduledSubjects.forEach(sub => {
         const examConfig = activeExam?.schedule?.[className]?.find(s => s.subjectName === sub.name);
         const subMax = examConfig?.totalMarks || 100;
+        const rawMin = examConfig?.minMarks;
+        const subMin = (rawMin === undefined || rawMin === null || rawMin === '') ? 35 : Number(rawMin);
         const isGradeOnly = examConfig?.isGradeOnly;
 
         const m = row.marks[sub.id];
-        if (m && m.mark !== null && m.mark !== undefined && !isGradeOnly) {
-          t += Number(m.mark);
-          maxT += subMax;
-        } else if (!isGradeOnly) {
-          // Even if they didn't get marks, if it's supposed to be marked, add to max
-          maxT += subMax;
+        
+        // Dynamically recalculate grade if it has a mark
+        if (m && m.mark !== undefined && m.mark !== null && !isGradeOnly && m.mark !== 'AB') {
+            m.grade = dynamicCalcGrade(Number(m.mark), examConfig);
+        }
+
+        if (m && (m.mark !== undefined || m.grade !== undefined) && (m.mark !== '' || m.grade !== '')) {
+          allBlank = false;
+          if (!isGradeOnly) {
+            if (m.mark === 'AB') {
+              hasFailed = true;
+            } else {
+              const numMark = Number(m.mark);
+              t += numMark;
+              maxT += subMax;
+              if (numMark < subMin) hasFailed = true;
+            }
+          } else {
+            if (m.grade === 'F' || m.grade === 'E') hasFailed = true;
+          }
+        } else {
+           // No mark entered yet for this subject
+           if (!isGradeOnly) maxT += subMax;
+           hasFailed = true;
         }
       });
       row.total = t;
       row.maxTotal = maxT;
       row.percentage = maxT > 0 ? ((t / maxT) * 100).toFixed(1) : 0;
+      row.resultStatus = allBlank ? '-' : (hasFailed ? 'FAIL' : 'PASS');
+      row.overallGrade = allBlank ? '-' : (hasFailed ? 'F' : calcGrade(row.total, row.maxTotal));
     });
 
     return Object.values(data).sort((a, b) => a.student.fullName.localeCompare(b.student.fullName));
-  }, [filteredStudents, results, classSubjects, activeExam, className]);
+  }, [filteredStudents, results, scheduledSubjects, activeExam, className]);
 
   // Averages per subject
   const subjectAverages = useMemo(() => {
     const avgs = {};
-    classSubjects.forEach(sub => {
+    scheduledSubjects.forEach(sub => {
       let sum = 0;
       let count = 0;
       tableData.forEach(row => {
         const m = row.marks[sub.id];
-        if (m && m.mark !== null && m.mark !== undefined) {
+        if (m && m.mark !== null && m.mark !== undefined && m.mark !== 'AB') {
           sum += Number(m.mark);
           count++;
         }
@@ -136,16 +183,94 @@ export default function ResultsSheetPage() {
       avgs[sub.id] = count > 0 ? (sum / count).toFixed(1) : '-';
     });
     return avgs;
-  }, [classSubjects, tableData]);
+  }, [scheduledSubjects, tableData]);
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF('landscape');
+    
+    doc.setFontSize(16);
+    doc.text(`Results Sheet: ${className} ${section ? '- ' + section : ''} - ${activeExamName}`, 14, 15);
+    
+    const head = [
+      [
+        { content: 'Student', rowSpan: 2, styles: { halign: 'left', valign: 'middle' } },
+        ...scheduledSubjects.map(s => ({ content: s.name, colSpan: 2, styles: { halign: 'center' } })),
+        { content: 'Total', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+        { content: '%', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+        { content: 'Grade', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+        { content: 'Result', rowSpan: 2, styles: { halign: 'center', valign: 'middle' } },
+      ],
+      [
+        ...scheduledSubjects.flatMap(() => [
+          { content: 'Mark', styles: { halign: 'center' } },
+          { content: 'Grade', styles: { halign: 'center' } }
+        ])
+      ]
+    ];
+    
+    const body = tableData.map(row => {
+      const rowData = [
+        `${row.student.fullName}\n${row.student.admissionNumber || '-'}`
+      ];
+      
+      scheduledSubjects.forEach(sub => {
+        const m = row.marks[sub.id];
+        const markText = m?.mark === 'AB' ? 'AB' : (m?.isGradeOnly ? '-' : (m?.mark ?? '-'));
+        const gradeText = m?.grade === 'AB' ? 'AB' : (m?.grade ?? '-');
+        rowData.push(markText);
+        rowData.push(gradeText);
+      });
+      
+      rowData.push(`${row.total} / ${row.maxTotal}`);
+      rowData.push(`${row.percentage}%`);
+      rowData.push(row.overallGrade);
+      rowData.push(row.resultStatus);
+      
+      return rowData;
+    });
+
+    if (tableData.length > 0) {
+      const avgRow = ['Class Average:'];
+      scheduledSubjects.forEach(sub => {
+        avgRow.push(subjectAverages[sub.id]);
+        avgRow.push('-');
+      });
+      avgRow.push('-');
+      avgRow.push('-');
+      avgRow.push('-');
+      avgRow.push('-');
+      body.push(avgRow);
+    }
+
+    autoTable(doc, {
+      startY: 25,
+      head: head,
+      body: body,
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+      headStyles: { fillColor: [41, 128, 185], textColor: 255, halign: 'center' },
+      alternateRowStyles: { fillColor: [245, 245, 245] },
+    });
+
+    doc.save(`Results_${className}_${activeExamName}.pdf`);
+  };
 
   if (loading) return <div className="p-8 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   return (
     <div className="space-y-6">
-      <NavLink to="/dashboard/academic" className="label-eyebrow text-primary">← Back to Academic</NavLink>
-      <h1 className="font-display font-black text-3xl tracking-tighter uppercase">Results Sheet</h1>
+      <style>{`
+        @media print {
+          @page { size: landscape; margin: 10mm; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          table { width: 100% !important; min-width: 100% !important; }
+          th, td { font-size: 11px !important; padding: 4px 2px !important; border: 1px solid #ccc !important; }
+        }
+      `}</style>
+      <NavLink to="/dashboard/academic" className="label-eyebrow text-primary print:hidden">← Back to Academic</NavLink>
+      <h1 className="font-display font-black text-3xl tracking-tighter uppercase print:text-center print:mb-4">Results Sheet</h1>
 
-      <div className="glass-morphism rounded-[2rem] p-5 grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="glass-morphism rounded-[2rem] p-5 grid grid-cols-2 md:grid-cols-3 gap-3 print:hidden">
         <div>
           <label className="label-eyebrow text-muted-foreground">Class</label>
           <select value={className} onChange={(e) => {
@@ -176,37 +301,39 @@ export default function ResultsSheetPage() {
         </div>
       </div>
 
-      <div className="glass-morphism rounded-[2rem] p-5 overflow-x-auto thin-scrollbar relative">
+      <div className="glass-morphism rounded-[2rem] p-5 overflow-x-auto thin-scrollbar relative print:overflow-visible print:p-0 print:shadow-none print:border-none print:bg-transparent">
         {loadingResults && (
           <div className="absolute inset-0 bg-background/50 backdrop-blur-sm z-10 flex items-center justify-center rounded-[2rem]">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         )}
         
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 print:hidden">
           <div className="label-eyebrow text-muted-foreground flex items-center gap-1.5">
             <FileText className="h-3.5 w-3.5" /> Comprehensive Marks
           </div>
-          <button onClick={() => window.print()} className="h-10 px-5 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center gap-2">
+          <button onClick={handleExportPDF} className="h-10 px-5 rounded-2xl bg-primary text-primary-foreground label-eyebrow flex items-center gap-2">
             <Download className="h-3.5 w-3.5" /> Print / Export
           </button>
         </div>
 
-        {classSubjects.length === 0 ? (
-          <div className="text-center p-8 text-muted-foreground">No subjects found for this class.</div>
+        {scheduledSubjects.length === 0 ? (
+          <div className="text-center p-8 text-muted-foreground">No subjects configured in Exam Setup for this class.</div>
         ) : (
           <table className="w-full text-sm border-collapse min-w-[800px]">
             <thead>
               <tr>
                 <th className="border-b border-border p-2 text-left font-bold text-muted-foreground" rowSpan={2}>Student</th>
-                {classSubjects.map(sub => (
+                {scheduledSubjects.map(sub => (
                   <th key={sub.id} className="border-b border-border p-2 text-center font-bold" colSpan={2}>{sub.name}</th>
                 ))}
                 <th className="border-b border-border p-2 text-center font-bold text-muted-foreground" rowSpan={2}>Total</th>
                 <th className="border-b border-border p-2 text-center font-bold text-muted-foreground" rowSpan={2}>%</th>
+                <th className="border-b border-border p-2 text-center font-bold text-muted-foreground" rowSpan={2}>Grade</th>
+                <th className="border-b border-border p-2 text-center font-bold text-muted-foreground" rowSpan={2}>Result</th>
               </tr>
               <tr>
-                {classSubjects.map(sub => (
+                {scheduledSubjects.map(sub => (
                   <React.Fragment key={`${sub.id}-cols`}>
                     <th className="border-b border-border p-1.5 text-center text-xs text-muted-foreground">Mark</th>
                     <th className="border-b border-border p-1.5 text-center text-xs text-muted-foreground">Grade</th>
@@ -217,7 +344,7 @@ export default function ResultsSheetPage() {
             <tbody>
               {tableData.length === 0 ? (
                 <tr>
-                  <td colSpan={classSubjects.length * 2 + 3} className="text-center p-8 text-muted-foreground">
+                  <td colSpan={scheduledSubjects.length * 2 + 5} className="text-center p-8 text-muted-foreground">
                     <Search className="h-6 w-6 mx-auto mb-2 opacity-50" />
                     No students found in this class/section.
                   </td>
@@ -228,12 +355,16 @@ export default function ResultsSheetPage() {
                     <div className="font-semibold">{row.student.fullName}</div>
                     <div className="text-xs text-muted-foreground">{row.student.admissionNumber || '-'}</div>
                   </td>
-                  {classSubjects.map(sub => {
+                  {scheduledSubjects.map(sub => {
                     const m = row.marks[sub.id];
                     return (
-                      <React.Fragment key={`${row.student.id}-${sub.id}`}>
-                        <td className="p-2 text-center font-medium">{m?.isGradeOnly ? '-' : (m?.mark ?? '-')}</td>
-                        <td className="p-2 text-center font-bold text-primary">{m?.grade ?? '-'}</td>
+                      <React.Fragment key={sub.id}>
+                        <td className="p-2 text-center text-muted-foreground">
+                          {m?.mark === 'AB' ? <span className="text-rose-500 font-bold text-[10px] uppercase">Absent</span> : (m?.isGradeOnly ? '-' : (m?.mark ?? '-'))}
+                        </td>
+                        <td className="p-2 text-center font-bold text-primary">
+                          {m?.grade === 'AB' ? <span className="text-rose-500 font-bold text-[10px] uppercase">Absent</span> : (m?.grade ?? '-')}
+                        </td>
                       </React.Fragment>
                     );
                   })}
@@ -243,17 +374,25 @@ export default function ResultsSheetPage() {
                   <td className="p-2 text-center font-black text-emerald-500">
                     {row.percentage}%
                   </td>
+                  <td className={`p-2 text-center font-black ${row.overallGrade === 'F' ? 'text-rose-500' : 'text-primary'}`}>
+                    {row.overallGrade}
+                  </td>
+                  <td className={`p-2 text-center font-black ${row.resultStatus === 'PASS' ? 'text-emerald-500' : (row.resultStatus === '-' ? 'text-muted-foreground' : 'text-rose-500')}`}>
+                    {row.resultStatus}
+                  </td>
                 </tr>
               ))}
               {tableData.length > 0 && (
                 <tr className="bg-muted/30 font-bold">
                   <td className="p-2 text-right">Class Average:</td>
-                  {classSubjects.map(sub => (
+                  {scheduledSubjects.map(sub => (
                     <React.Fragment key={`avg-${sub.id}`}>
                       <td className="p-2 text-center text-indigo-500">{subjectAverages[sub.id]}</td>
                       <td className="p-2 text-center">-</td>
                     </React.Fragment>
                   ))}
+                  <td className="p-2 text-center">-</td>
+                  <td className="p-2 text-center">-</td>
                   <td className="p-2 text-center">-</td>
                   <td className="p-2 text-center">-</td>
                 </tr>

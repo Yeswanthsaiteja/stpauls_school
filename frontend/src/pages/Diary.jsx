@@ -22,9 +22,7 @@ export default function Diary() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [filterAcademicYear, setFilterAcademicYear] = useState(getCurrentAcademicYear());
-  const [filterCls, setFilterCls] = useState(isParent ? parentClass : '');
-  const [filterSec, setFilterSec] = useState(isParent ? parentSection : '');
+  const [filterDate, setFilterDate] = useState('');
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
@@ -59,11 +57,16 @@ export default function Diary() {
     setSaving(false);
   };
 
-  const visible = list.filter((d) =>
-    (!filterAcademicYear || d.academicYear === filterAcademicYear) &&
-    (!filterCls || d.className === filterCls) &&
-    (!filterSec || d.section === filterSec)
-  );
+  const visible = list.filter((d) => {
+    if (isParent) {
+      if (parentClass && d.className !== parentClass) return false;
+      if (parentSection && d.section !== parentSection) return false;
+    } else {
+      if (filterDate && d.date !== filterDate) return false;
+    }
+    
+    return true;
+  });
 
   return (
     <div className="space-y-6" data-testid="diary-page">
@@ -94,19 +97,20 @@ export default function Diary() {
       </div>
 
       {!isParent && (
-        <div className="glass-morphism rounded-[2rem] p-4 grid grid-cols-1 md:grid-cols-3 gap-2">
-          <select value={filterAcademicYear} onChange={(e) => setFilterAcademicYear(e.target.value)} className="h-10 px-3 rounded-2xl border border-border bg-card text-sm">
-            <option value="2024-25">2024-25</option>
-            <option value="2025-26">2025-26</option>
-            <option value="2026-27">2026-27</option>
-            <option value="2027-28">2027-28</option>
-          </select>
-          <select value={filterCls} onChange={(e) => setFilterCls(e.target.value)} className="h-10 px-3 rounded-2xl border border-border bg-card text-sm">
-            <option value="">All Classes</option>{CLASS_OPTIONS.map((c) => <option key={c}>{c}</option>)}
-          </select>
-          <select value={filterSec} onChange={(e) => setFilterSec(e.target.value)} className="h-10 px-3 rounded-2xl border border-border bg-card text-sm">
-            <option value="">All Sections</option>{SECTION_OPTIONS.map((c) => <option key={c}>{c}</option>)}
-          </select>
+        <div className="glass-morphism rounded-[2rem] p-4 flex flex-wrap gap-3 items-center">
+          <div className="flex items-center gap-2">
+            <input 
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="h-10 px-3 rounded-2xl border border-border bg-card text-sm outline-none focus:border-primary"
+            />
+            {filterDate && (
+              <button onClick={() => setFilterDate('')} className="p-2 hover:bg-muted rounded-full" title="Clear Date">
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            )}
+          </div>
         </div>
       )}
 

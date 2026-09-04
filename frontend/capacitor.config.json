@@ -1,6 +1,6 @@
 {
-  "appId": "com.stpauls.school.erp",
-  "appName": "St. Paul's School ERP",
+  "appId": "com.stpauls.school.test",
+  "appName": "St. Paul's High School SKLM",
   "webDir": "build",
   "server": {
     "androidScheme": "https"
@@ -12,7 +12,7 @@
   },
   "ios": {
     "scheme": "App",
-    "contentInset": "automatic",
+    "minVersion": "14.0",
     "allowsLinkPreview": false,
     "scrollEnabled": true,
     "limitsNavigationsToAppBoundDomains": true
@@ -23,9 +23,9 @@
       "providers": ["phone"]
     },
     "SplashScreen": {
-      "launchShowDuration": 2500,
+      "launchShowDuration": 0,
       "launchAutoHide": true,
-      "backgroundColor": "#4f46e5",
+      "backgroundColor": "#ffffff",
       "androidSplashResourceName": "splash",
       "androidScaleType": "CENTER_CROP",
       "iosSplashResourceName": "Splash",
@@ -34,15 +34,15 @@
       "splashImmersive": true
     },
     "StatusBar": {
-      "style": "DARK",
-      "backgroundColor": "#4f46e5",
+      "style": "LIGHT",
+      "backgroundColor": "#ffffff",
       "overlaysWebView": false
     },
     "PushNotifications": {
       "presentationOptions": ["badge", "sound", "alert"]
     },
     "Keyboard": {
-      "resize": "body",
+      "resize": "native",
       "style": "dark",
       "resizeOnFullScreen": true
     }

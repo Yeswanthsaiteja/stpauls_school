@@ -8,6 +8,8 @@
 
 set -e
 
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
 ANDROID_DIR="$FRONTEND_DIR/android"
@@ -98,6 +100,7 @@ if [ "$BUILD_IOS" = true ]; then
     echo "    Then re-run this script."
     echo ""
   else
+    export LANG=en_US.UTF-8
     cd "$IOS_DIR/App"
     pod install
 

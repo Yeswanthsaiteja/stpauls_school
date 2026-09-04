@@ -22,7 +22,7 @@ const TENANT_ID = process.env.REACT_APP_TENANT_ID || 'stpauls';
 const AuthContext = createContext(null);
 
 // ─── Resolve a phone number strictly as a specific role ───────────────────────
-async function resolvePhoneAsRole(phone, loginRole) {
+export async function resolvePhoneAsRole(phone, loginRole) {
   // Always check admin first — no Firestore needed
   if (loginRole === 'admin') {
     const digits = phone.replace(/\D/g, '');
@@ -323,6 +323,8 @@ export function AuthProvider({ children }) {
         if (p) {
           setProfile(p);
           if (p.pin && !pinSetSession) setAppLocked(true);
+        } else {
+          setProfile(null);
         }
       } else {
         setUser(null);

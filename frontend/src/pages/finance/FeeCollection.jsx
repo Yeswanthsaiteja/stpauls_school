@@ -214,6 +214,8 @@ export default function FeeCollection() {
         paymentDate: new Date().toISOString(),
         paymentMethod: mode.toUpperCase(),
         academicYear,
+        collectedBy: profile?.fullName || profile?.displayName || 'Admin',
+        collectedByRole: profile?.role || 'Admin',
         status: 'PAID',
         remarks: rzpPaymentId ? `Razorpay: ${rzpPaymentId}` : remarks,
         chequeNo,

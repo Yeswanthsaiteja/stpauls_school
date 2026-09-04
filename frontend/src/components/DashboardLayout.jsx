@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { isFirebaseConfigured } from '../lib/firebase';
 import { cn } from '../lib/utils';
 import { subscribeNotifications, markAllNotificationsRead, markNotificationRead } from '../services/firebase/notificationsService';
+import { getStudent } from '../services/firebase/studentsService';
 
 const ROLE_NAV = {
   ADMIN: [
@@ -51,6 +52,7 @@ const ROLE_NAV = {
     { to: '/dashboard/parent-dashboard/attendance', icon: CalendarCheck, key: 'attendance' },
     { to: '/dashboard/parent-dashboard/finance', icon: IndianRupee, key: 'finance' },
     { to: '/dashboard/parent-dashboard/result', icon: BookOpen, key: 'results' },
+    { to: '/dashboard/parent-dashboard/class-timetable', icon: Calendar, key: 'classTimetable' },
     { to: '/dashboard/parent-dashboard/exam-timetable', icon: Calendar, key: 'examTimetable' },
     { to: '/dashboard/parent-dashboard/announcements', icon: Bell, key: 'announcements' },
     { to: '/dashboard/parent-dashboard/support', icon: Headset, key: 'support' },
@@ -181,13 +183,27 @@ export default function DashboardLayout() {
   // Multi-child switcher state — read from ParentChildContext if available
   const parentCtx = React.useContext(ParentChildContext);
   const isParent = roleKey(profile?.role) === 'PARENT';
+  const [topNavChildPhoto, setTopNavChildPhoto] = useState(null);
+
+  useEffect(() => {
+    if (isParent) {
+      const studentId = profile?.linkedStudentId || profile?.linkedStudents?.[parentCtx?.childIdx || 0]?.id;
+      if (studentId) {
+        getStudent(studentId).then(s => {
+          if (s?.photoURL) setTopNavChildPhoto(s.photoURL);
+        });
+      }
+    }
+  }, [isParent, profile, parentCtx?.childIdx]);
 
   const items = useMemo(() => {
     const baseRole = roleKey(profile?.role);
     let baseItems = [...(ROLE_NAV[baseRole] || [])];
     
     if (baseRole === 'STAFF' && profile?.permissions?.length > 0) {
-      const extraItems = ROLE_NAV.ADMIN.filter(item => profile.permissions.includes(item.key));
+      const extraItems = ROLE_NAV.ADMIN.filter(item => 
+        profile.permissions.includes(item.key) || profile.permissions.some(p => p.startsWith(item.key + '.'))
+      );
       const settingsIdx = baseItems.findIndex(i => i.key === 'settings');
       if (settingsIdx !== -1) {
         baseItems = [...baseItems.slice(0, settingsIdx), ...extraItems, baseItems[settingsIdx]];
@@ -238,11 +254,11 @@ export default function DashboardLayout() {
 
   const switchLang = () => i18n.changeLanguage(i18n.language === 'te' ? 'en' : 'te');
 
-  const SidebarBody = (
+  const SidebarBody = (isMobile = false) => (
     <div className="h-full flex flex-col">
-      <div className="px-4 pt-6 pb-4 flex items-center justify-center">
-        <button onClick={() => navigate('/dashboard')} className={`transition-all duration-300 overflow-hidden outline-none cursor-pointer hover:scale-105 ${collapsed ? 'w-12 h-12' : 'w-full px-2 h-28'}`}>
-          <img src={logoSrc} alt="St. Paul's High School" className="w-full h-full object-contain" />
+      <div className={`px-4 pb-4 flex items-center justify-center ${isMobile ? 'pt-16' : 'pt-6'}`}>
+        <button onClick={() => navigate('/dashboard')} className={`relative transition-all duration-300 outline-none cursor-pointer hover:scale-105 flex items-center justify-center w-full ${collapsed ? 'w-12 h-12' : 'h-28'}`}>
+          <img src={logoSrc} alt="St. Paul's High School" className="absolute inset-0 w-full h-full object-contain" />
         </button>
       </div>
 
@@ -296,11 +312,11 @@ export default function DashboardLayout() {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          'hidden lg:flex relative flex-col border-r border-border bg-card/40 backdrop-blur-xl transition-all duration-300',
+          'hidden lg:flex relative flex-col border-r border-border bg-card/40 backdrop-blur-xl transition-all duration-300 shrink-0 print:hidden',
           collapsed ? 'w-[80px]' : 'w-[260px]'
         )}
       >
-        {SidebarBody}
+        {SidebarBody(false)}
         <button
           data-testid="sidebar-collapse-toggle"
           onClick={() => setCollapsed((c) => !c)}
@@ -322,24 +338,24 @@ export default function DashboardLayout() {
             <motion.aside
               initial={{ x: -300 }} animate={{ x: 0 }} exit={{ x: -300 }}
               transition={{ type: 'spring', damping: 22 }}
-              className="fixed left-0 top-0 bottom-0 w-[260px] bg-card border-r border-border z-50 lg:hidden"
+              className="fixed left-0 top-0 bottom-0 w-[260px] bg-card border-r border-border z-50 lg:hidden safe-pt"
             >
-              <button onClick={() => setMobileOpen(false)} className="absolute right-3 top-3 p-2 rounded-xl hover:bg-muted" data-testid="mobile-sidebar-close">
+              <button onClick={() => setMobileOpen(false)} className="absolute right-3 top-3 p-2 rounded-xl hover:bg-muted z-50" data-testid="mobile-sidebar-close">
                 <X className="h-4 w-4" />
               </button>
-              {SidebarBody}
+              {SidebarBody(true)}
             </motion.aside>
           </>
         )}
       </AnimatePresence>
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 print:m-0 print:p-0">
         {/* Topbar */}
-        <header className="sticky top-0 z-50 border-b border-border bg-background/70 backdrop-blur-xl">
+        <header className="sticky top-0 z-50 border-b border-border bg-background/70 backdrop-blur-xl safe-pt print:hidden">
           <div className="flex items-center justify-between px-4 sm:px-6 h-16 gap-3">
             <div className="flex items-center gap-3 min-w-0 flex-1">
               <button onClick={() => setMobileOpen(true)} className="lg:hidden p-2 rounded-xl hover:bg-muted" data-testid="mobile-menu-open">
-                <Menu className="h-5 w-5" />
+                <Menu className="h-5 w-5 text-muted-foreground" />
               </button>
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/60">
                 <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -423,8 +439,12 @@ export default function DashboardLayout() {
                     <div className="text-sm font-bold">{profile?.fullName || profile?.displayName || 'User'}</div>
                     <div className="label-eyebrow text-muted-foreground">{profile?.role || 'GUEST'}</div>
                   </div>
-                  <div className="h-9 w-9 rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center text-white text-sm font-black">
-                    {(profile?.fullName || profile?.email || 'U')[0].toUpperCase()}
+                  <div className="h-9 w-9 rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 grid place-items-center text-white text-sm font-black overflow-hidden ring-2 ring-background">
+                    {isParent && topNavChildPhoto ? (
+                      <img src={topNavChildPhoto} alt="Child" className="h-full w-full object-cover" />
+                    ) : (
+                      (profile?.fullName || profile?.email || 'U')[0].toUpperCase()
+                    )}
                   </div>
                 </button>
 
@@ -498,7 +518,7 @@ export default function DashboardLayout() {
           </div>
         )}
 
-        <main className="flex-1 grid-bg-dots p-4 sm:p-6 lg:p-8 min-w-0">
+        <main className="flex-1 grid-bg-dots min-w-0 p-4 sm:p-6 lg:p-8 print:p-0 print:bg-none">
           <Outlet />
         </main>
       </div>

@@ -3,13 +3,16 @@
  * No composite indexes. No demoStore. Pure Firestore.
  */
 import {
-  collection, doc, getDoc, getDocs, setDoc, serverTimestamp,
+  collection, doc, getDoc, getDocs, setDoc, serverTimestamp, query, where,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../lib/firebase';
-import { safe } from './firestoreHelpers';
+import { safe, queryDocs } from './firestoreHelpers';
 
 const TENANT_ID = process.env.REACT_APP_TENANT_ID || 'stpauls';
 const COL = 'attendance';
+
+const attCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000;
 
 function guard() { return isFirebaseConfigured && !!db; }
 
@@ -35,35 +38,55 @@ export async function saveAttendance(className, section, date, records, markedBy
     tenantId: TENANT_ID, className, section, date, records,
     present, absent, late, markedBy, updatedAt: serverTimestamp(),
   }, { merge: true });
+  attCache.clear();
 }
 
 /** List all attendance records (client-side filtered). */
-export async function listAttendance({ className, date } = {}) {
+export async function listAttendance(args = {}) {
+  const { className, date } = args;
+  const cacheKey = 'list_' + JSON.stringify(args);
+  if (attCache.has(cacheKey)) {
+    const { data, timestamp } = attCache.get(cacheKey);
+    if (Date.now() - timestamp < CACHE_TTL) return data;
+  }
   if (!guard()) return [];
   return safe(async () => {
-    const snap = await getDocs(collection(db, COL));
-    let list = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((r) => !r.tenantId || r.tenantId === TENANT_ID);
-    if (className) list = list.filter((r) => r.className === className);
-    if (date)      list = list.filter((r) => r.date      === date);
+    const constraints = [where('tenantId', '==', TENANT_ID)];
+    if (className) constraints.push(where('className', '==', className));
+    if (date) constraints.push(where('date', '==', date));
+    
+    const list = await queryDocs(COL, ...constraints);
+    attCache.set(cacheKey, { data: list, timestamp: Date.now() });
     return list;
   }, []);
 }
 
 /** Get attendance summary for a student over a date range. */
 export async function getStudentAttendanceSummary(studentId) {
+  const cacheKey = 'summary_' + studentId;
+  if (attCache.has(cacheKey)) {
+    const { data, timestamp } = attCache.get(cacheKey);
+    if (Date.now() - timestamp < CACHE_TTL) return data;
+  }
   if (!guard()) return { present: 0, absent: 0, late: 0, total: 0 };
   return safe(async () => {
-    const snap = await getDocs(collection(db, COL));
+    // Only fetch attendance documents that contain an entry for this specific student
+    const list = await queryDocs(
+      COL,
+      where('tenantId', '==', TENANT_ID),
+      where(`records.${studentId}`, 'in', ['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY'])
+    );
+    
     let present = 0, absent = 0, late = 0;
-    snap.docs.forEach((d) => {
-      const data = d.data();
-      if (!data.tenantId || data.tenantId !== TENANT_ID) return;
+    list.forEach((data) => {
       const status = (data.records || {})[studentId];
       if (status === 'PRESENT') present++;
       else if (status === 'ABSENT') absent++;
       else if (status === 'LATE') late++;
     });
     const total = present + absent + late;
-    return { present, absent, late, total, pct: total ? Math.round((present / total) * 100) : 0 };
+    const result = { present, absent, late, total, pct: total ? Math.round((present / total) * 100) : 0 };
+    attCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    return result;
   }, { present: 0, absent: 0, late: 0, total: 0, pct: 0 });
 }

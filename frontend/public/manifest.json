@@ -4,62 +4,47 @@
   "description": "Institutional Management Suite for St. Paul's High School — Admissions, Finance, Attendance, Diary & More",
   "icons": [
     {
-      "src": "icons/icon-72x72.png",
+      "src": "/icons/icon-72x72.png",
+      "type": "image/png",
       "sizes": "72x72",
-      "type": "image/png",
-      "purpose": "maskable any"
+      "purpose": "any maskable"
     },
     {
-      "src": "icons/icon-96x96.png",
+      "src": "/icons/icon-96x96.png",
+      "type": "image/png",
       "sizes": "96x96",
-      "type": "image/png",
-      "purpose": "maskable any"
+      "purpose": "any maskable"
     },
     {
-      "src": "icons/icon-128x128.png",
+      "src": "/icons/icon-128x128.png",
+      "type": "image/png",
       "sizes": "128x128",
-      "type": "image/png",
-      "purpose": "maskable any"
+      "purpose": "any maskable"
     },
     {
-      "src": "icons/icon-144x144.png",
-      "sizes": "144x144",
+      "src": "/icons/icon-192x192.png",
       "type": "image/png",
-      "purpose": "maskable any"
-    },
-    {
-      "src": "icons/icon-152x152.png",
-      "sizes": "152x152",
-      "type": "image/png",
-      "purpose": "maskable any"
-    },
-    {
-      "src": "icons/icon-192x192.png",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable any"
+      "purpose": "any maskable"
     },
     {
-      "src": "icons/icon-384x384.png",
-      "sizes": "384x384",
+      "src": "/icons/icon-512x512.png",
       "type": "image/png",
-      "purpose": "maskable any"
-    },
-    {
-      "src": "icons/icon-512x512.png",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable any"
+      "purpose": "any maskable"
     }
   ],
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
   "theme_color": "#4f46e5",
-  "background_color": "#0f0f1a",
+  "background_color": "#ffffff",
   "scope": "/",
   "lang": "en",
-  "categories": ["education", "productivity"],
+  "categories": [
+    "education",
+    "productivity"
+  ],
   "screenshots": [
     {
       "src": "screenshots/mobile-home.png",

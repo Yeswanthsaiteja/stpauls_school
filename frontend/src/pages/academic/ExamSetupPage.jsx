@@ -88,8 +88,10 @@ export default function ExamSetupPage() {
       const nextClasses = has ? prev.classes.filter(x => x !== c) : [...prev.classes, c];
       
       const nextSchedule = { ...prev.schedule };
-      if (has) delete nextSchedule[c];
-      else nextSchedule[c] = [];
+      // Do not delete nextSchedule[c] when toggling off, so data is preserved if they toggle back on.
+      if (!has && !nextSchedule[c]) {
+        nextSchedule[c] = [];
+      }
       
       return { ...prev, classes: nextClasses, schedule: nextSchedule };
     });
@@ -98,18 +100,20 @@ export default function ExamSetupPage() {
   const addSubjectToClass = (cls) => {
     setForm(prev => {
       const next = { ...prev };
+      next.schedule = { ...prev.schedule };
       if (!next.schedule[cls]) next.schedule[cls] = [];
-      next.schedule[cls].push({
+      next.schedule[cls] = [...next.schedule[cls], {
         id: Date.now().toString(),
         subjectName: subjects.length > 0 ? subjects[0].name : '',
         date: '',
         startTime: '09:00',
         endTime: '12:00',
         totalMarks: 100,
+        minMarks: 35,
         isGradeOnly: false,
         gradingScale: JSON.parse(JSON.stringify(DEFAULT_SCALE)),
         gradeOptions: [...DEFAULT_GRADES]
-      });
+      }];
       return next;
     });
   };
@@ -117,6 +121,7 @@ export default function ExamSetupPage() {
   const updateSubject = (cls, subId, field, val) => {
     setForm(prev => {
       const next = { ...prev };
+      next.schedule = { ...prev.schedule };
       next.schedule[cls] = next.schedule[cls].map(s => s.id === subId ? { ...s, [field]: val } : s);
       return next;
     });
@@ -126,6 +131,7 @@ export default function ExamSetupPage() {
     if (!window.confirm('Remove subject from schedule?')) return;
     setForm(prev => {
       const next = { ...prev };
+      next.schedule = { ...prev.schedule };
       next.schedule[cls] = next.schedule[cls].filter(s => s.id !== subId);
       return next;
     });
@@ -136,9 +142,15 @@ export default function ExamSetupPage() {
     if (form.examType === 'Other' && !form.customName.trim()) return toast.error('Custom Exam Name is required');
     if (form.classes.length === 0) return toast.error('Select at least one class');
 
+    // Only save the schedule for classes that are actively selected
+    const activeSchedule = {};
+    form.classes.forEach(c => {
+      activeSchedule[c] = form.schedule[c] || [];
+    });
+
     // extract all unique subjects used across classes
     const allUsedSubjects = new Set();
-    Object.values(form.schedule).forEach(arr => {
+    Object.values(activeSchedule).forEach(arr => {
       arr.forEach(s => { if (s.subjectName) allUsedSubjects.add(s.subjectName); });
     });
 
@@ -147,7 +159,7 @@ export default function ExamSetupPage() {
       customName: form.examType === 'Other' ? form.customName.trim() : '',
       classes: form.classes,
       subjects: Array.from(allUsedSubjects), // keeping array for backwards compatibility
-      schedule: form.schedule
+      schedule: activeSchedule
     };
 
     if (saving) return; setSaving(true);
@@ -253,18 +265,24 @@ export default function ExamSetupPage() {
                       </div>
                       
                       <div>
-                        <label className="label-eyebrow text-muted-foreground mb-2 block">Select Classes Participating</label>
-                        <div className="flex flex-wrap gap-2">
+                        <label className="label-eyebrow text-muted-foreground mb-3 block">Select Classes Participating in this Exam</label>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                           {classes.map(c => {
                             const active = form.classes.includes(c.name);
                             return (
-                              <button key={c.id} onClick={() => toggleClass(c.name)} className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${active ? 'bg-primary text-primary-foreground shadow-md' : 'bg-muted text-foreground border border-border'}`}>
-                                {c.name}
-                              </button>
+                              <label key={c.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${active ? 'bg-primary/5 border-primary shadow-sm' : 'bg-background border-border hover:bg-muted/50'}`}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={active} 
+                                  onChange={() => toggleClass(c.name)} 
+                                  className="accent-primary h-4 w-4"
+                                />
+                                <span className={`text-sm font-bold ${active ? 'text-primary' : 'text-foreground'}`}>Class {c.name}</span>
+                              </label>
                             );
                           })}
                         </div>
-                        {form.classes.length === 0 && <p className="text-xs text-rose-500 mt-2">Select at least one class to proceed.</p>}
+                        {form.classes.length === 0 && <p className="text-xs text-rose-500 mt-2 flex items-center gap-1">⚠ Please select at least one class to proceed.</p>}
                       </div>
 
                       <div className="pt-2 border-t border-border flex justify-end">
@@ -333,7 +351,10 @@ export default function ExamSetupPage() {
                                   <div><label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Start Time</label><input type="time" value={sub.startTime} onChange={e => updateSubject(activeClassTab, sub.id, 'startTime', e.target.value)} className="w-full h-9 px-3 rounded-xl border border-border bg-background text-sm" /></div>
                                   <div><label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">End Time</label><input type="time" value={sub.endTime} onChange={e => updateSubject(activeClassTab, sub.id, 'endTime', e.target.value)} className="w-full h-9 px-3 rounded-xl border border-border bg-background text-sm" /></div>
                                   {!sub.isGradeOnly && (
-                                    <div><label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Total Marks</label><input type="number" value={sub.totalMarks} onChange={e => updateSubject(activeClassTab, sub.id, 'totalMarks', Number(e.target.value))} className="w-full h-9 px-3 rounded-xl border border-border bg-background text-sm" /></div>
+                                    <>
+                                      <div><label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Maximum Marks</label><input type="number" value={sub.totalMarks} onChange={e => updateSubject(activeClassTab, sub.id, 'totalMarks', Number(e.target.value))} className="w-full h-9 px-3 rounded-xl border border-border bg-background text-sm" /></div>
+                                      <div><label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">Minimum Marks</label><input type="number" value={sub.minMarks ?? 35} onChange={e => updateSubject(activeClassTab, sub.id, 'minMarks', Number(e.target.value))} className="w-full h-9 px-3 rounded-xl border border-border bg-background text-sm" /></div>
+                                    </>
                                   )}
                                 </div>
 

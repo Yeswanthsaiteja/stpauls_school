@@ -6,6 +6,7 @@ import { listSubjects, addSubject, deleteSubject, listClasses, addClass } from '
 import { listStudents } from '../services/firebase/studentsService';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { useAuth } from '../contexts/AuthContext';
 
 const Card = ({ icon: Icon, label, sub, color, onClick, testId }) => (
   <motion.button onClick={onClick} whileHover={{ y: -5, scale: 1.02 }} data-testid={testId} className="glass-morphism rounded-[2rem] p-5 text-left">
@@ -31,17 +32,24 @@ function Landing() {
     });
   }, []);
 
-  const cards = [
-    { icon: BookOpen,      label: t('classesSections'), sub: t('manageGrades'),     color: 'bg-gradient-to-br from-indigo-500 to-violet-500',  to: '/dashboard/academic/classes' },
-    { icon: BookMarked,    label: t('subjectTopics'),    sub: t('crudProgress'),  color: 'bg-gradient-to-br from-emerald-500 to-teal-500',   to: '/dashboard/academic/subjects' },
-    { icon: Calendar,      label: t('timetable'),         sub: t('weeklySlots'),     color: 'bg-gradient-to-br from-amber-500 to-orange-500',   to: '/dashboard/timetable' },
-    { icon: FileText,      label: t('marksEntry', 'Marks Entry'),     sub: t('markSheets'),      color: 'bg-gradient-to-br from-rose-500 to-pink-500',      to: '/dashboard/results-entry' },
-    { icon: FileText,      label: 'Results Sheet', sub: 'Comprehensive Marks', color: 'bg-gradient-to-br from-indigo-500 to-blue-500', to: '/dashboard/academic/results-sheet' },
-    { icon: FileText,      label: t('examScheduling'),   sub: t('globalExamsSetup'),color: 'bg-gradient-to-br from-indigo-500 to-blue-500',     to: '/dashboard/academic/exams' },
-    { icon: Clock,         label: 'Result Scheduling', sub: 'Publish results', color: 'bg-gradient-to-br from-pink-500 to-rose-500', to: '/dashboard/academic/result-scheduling' },
-    { icon: Lightbulb,     label: t('lessonPlanning'),   sub: t('approvalWorkflow'),color: 'bg-gradient-to-br from-cyan-500 to-blue-500',      to: '/dashboard/academic/lesson-planning' },
-    { icon: ArrowUpCircle, label: t('yearEndPromotion'),sub: t('bulkPromote'),     color: 'bg-gradient-to-br from-fuchsia-500 to-purple-500', to: '/dashboard/academic/promotion' },
+  const { profile } = useAuth();
+  const p = profile?.permissions || [];
+  const isAdmin = profile?.role === 'SCHOOL_ADMIN' || profile?.role === 'ADMIN';
+  const canAccess = (key) => isAdmin || p.includes('academic') || p.includes(key);
+
+  const allCards = [
+    { icon: BookOpen,      label: t('classesSections'), sub: t('manageGrades'),     color: 'bg-gradient-to-br from-indigo-500 to-violet-500',  to: '/dashboard/academic/classes', reqKey: 'academic.classes' },
+    { icon: BookMarked,    label: t('subjectTopics'),    sub: t('crudProgress'),  color: 'bg-gradient-to-br from-emerald-500 to-teal-500',   to: '/dashboard/academic/subjects', reqKey: 'academic.subject-topics' },
+    { icon: Calendar,      label: t('timetable'),         sub: t('weeklySlots'),     color: 'bg-gradient-to-br from-amber-500 to-orange-500',   to: '/dashboard/timetable', reqKey: 'academic.timetable' },
+    { icon: FileText,      label: t('marksEntry', 'Marks Entry'),     sub: t('markSheets'),      color: 'bg-gradient-to-br from-rose-500 to-pink-500',      to: '/dashboard/results-entry', reqKey: 'academic.marks-entry' },
+    { icon: FileText,      label: 'Results Sheet', sub: 'Comprehensive Marks', color: 'bg-gradient-to-br from-indigo-500 to-blue-500', to: '/dashboard/academic/results-sheet', reqKey: 'academic.results-sheet' },
+    { icon: FileText,      label: t('examScheduling'),   sub: t('globalExamsSetup'),color: 'bg-gradient-to-br from-indigo-500 to-blue-500',     to: '/dashboard/academic/exams', reqKey: 'academic.exam-setup' },
+    { icon: Clock,         label: 'Result Scheduling', sub: 'Publish results', color: 'bg-gradient-to-br from-pink-500 to-rose-500', to: '/dashboard/academic/result-scheduling', reqKey: 'academic.result-scheduling' },
+    { icon: Lightbulb,     label: t('lessonPlanning'),   sub: t('approvalWorkflow'),color: 'bg-gradient-to-br from-cyan-500 to-blue-500',      to: '/dashboard/academic/lesson-planning', reqKey: 'academic.lesson-planning' },
+    { icon: ArrowUpCircle, label: t('yearEndPromotion'),sub: t('bulkPromote'),     color: 'bg-gradient-to-br from-fuchsia-500 to-purple-500', to: '/dashboard/academic/promotion', reqKey: 'academic.year-end-promotion' },
   ];
+  
+  const cards = allCards.filter(c => canAccess(c.reqKey));
 
   // Group students by class
   const classCounts = {};

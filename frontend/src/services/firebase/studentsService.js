@@ -3,32 +3,64 @@
  * Uses simple getDocs(collection) + client-side filter to avoid composite index errors.
  */
 import {
-  collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, serverTimestamp,
+  collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, serverTimestamp, query, where, getCountFromServer,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../lib/firebase';
-import { safe } from './firestoreHelpers';
+import { safe, getDocsCached, invalidateCache, queryDocs } from './firestoreHelpers';
 
 const TENANT_ID = process.env.REACT_APP_TENANT_ID || 'stpauls';
 const COL = 'students';
 
 // Get all students from Firestore (no composite index needed)
 async function fetchAll() {
-  const snap = await getDocs(collection(db, COL));
+  const snap = await getDocsCached(COL);
   return snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((s) => s.tenantId === TENANT_ID);
 }
 
-export async function listStudents({ className, section, status, academicYear } = {}) {
+const listCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export async function listStudents(args = {}) {
+  const { className, section, status, academicYear } = args;
+  const cacheKey = JSON.stringify(args);
+  
+  if (listCache.has(cacheKey)) {
+    const { data, timestamp } = listCache.get(cacheKey);
+    if (Date.now() - timestamp < CACHE_TTL) return data;
+  }
+
   if (!isFirebaseConfigured || !db) { console.error('Firebase not configured'); return []; }
   return safe(async () => {
-    let list = await fetchAll();
-    if (academicYear) list = list.filter((s) => s.academicYear === academicYear);
-    if (className) list = list.filter((s) => s.className === className);
-    if (section)   list = list.filter((s) => s.section   === section);
-    if (status)    list = list.filter((s) => s.status    === status);
-    return list.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
+    const constraints = [where('tenantId', '==', TENANT_ID)];
+    if (className) constraints.push(where('className', '==', className));
+    else if (academicYear) constraints.push(where('academicYear', '==', academicYear));
+    else if (status) constraints.push(where('status', '==', status));
+    
+    let list = await queryDocs(COL, ...constraints);
+    
+    // JS filters
+    if (academicYear && className) list = list.filter((s) => s.academicYear === academicYear);
+    if (section) list = list.filter((s) => s.section === section);
+    if (status && (className || academicYear)) list = list.filter((s) => s.status === status);
+    
+    const sortedList = list.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
+    listCache.set(cacheKey, { data: sortedList, timestamp: Date.now() });
+    return sortedList;
   }, []);
+}
+
+export async function getStudentsCount({ status } = {}) {
+  if (!isFirebaseConfigured || !db) return 0;
+  return safe(async () => {
+    const constraints = [where('tenantId', '==', TENANT_ID)];
+    if (status) constraints.push(where('status', '==', status));
+    
+    const q = query(collection(db, COL), ...constraints);
+    const snapshot = await getCountFromServer(q);
+    return snapshot.data().count;
+  }, 0);
 }
 
 export async function getStudent(id) {
@@ -62,8 +94,10 @@ export async function addStudent(data) {
     updatedAt: serverTimestamp(),
   };
   return safe(async () => {
-    const ref = await addDoc(collection(db, COL), payload);
-    return { id: ref.id, ...payload };
+    const r = await addDoc(collection(db, COL), { ...payload, tenantId: TENANT_ID });
+    listCache.clear();
+    invalidateCache(COL);
+    return { id: r.id, ...payload };
   }, null);
 }
 
@@ -71,29 +105,38 @@ export async function updateStudent(id, patch) {
   if (!isFirebaseConfigured || !db) return;
   // These fields are set at admission time and must never be overwritten
   const { admissionYear, admissionClass, admissionNo, tenantId, createdAt, ...safePatch } = patch;
-  await safe(() => updateDoc(doc(db, COL, id), { ...safePatch, updatedAt: serverTimestamp() }));
+  await safe(async () => {
+    await updateDoc(doc(db, COL, id), { ...safePatch, updatedAt: serverTimestamp() });
+    invalidateCache(COL);
+  });
 }
 
 export async function removeStudent(id, reason = '') {
   if (!isFirebaseConfigured || !db) return;
-  await safe(() =>
-    updateDoc(doc(db, COL, id), {
+  await safe(async () => {
+    await updateDoc(doc(db, COL, id), {
       status: 'REMOVED', removalReason: reason,
       removedAt: serverTimestamp(), updatedAt: serverTimestamp(),
-    }),
-  );
+    });
+    invalidateCache(COL);
+  });
 }
 
 export async function rejoinStudent(id) {
   if (!isFirebaseConfigured || !db) return;
-  await safe(() =>
-    updateDoc(doc(db, COL, id), { status: 'ACTIVE', rejoinedAt: serverTimestamp(), updatedAt: serverTimestamp() }),
-  );
+  await safe(async () => {
+    await updateDoc(doc(db, COL, id), { status: 'ACTIVE', rejoinedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    invalidateCache(COL);
+  });
 }
 
 export async function deleteStudent(id) {
   if (!isFirebaseConfigured || !db) return;
-  await safe(() => deleteDoc(doc(db, COL, id)));
+  await safe(async () => {
+    await deleteDoc(doc(db, COL, id));
+    listCache.clear();
+    invalidateCache(COL);
+  });
 }
 
 export async function searchStudents(term, { status = 'ACTIVE', academicYear } = {}) {

@@ -4,6 +4,12 @@
 @tailwind components;
 @tailwind utilities;
 
+
+@supports (-webkit-touch-callout: none) {
+  body {
+  }
+}
+
 :root {
   /* Benita ERP design tokens */
   --accent-color: #6366f1;
@@ -71,12 +77,38 @@
 
 * { border-color: hsl(var(--border)); }
 
-html, body, #root {
+html, body {
   height: 100%;
 }
 
+#root {
+  height: 100%;
+  /* padding-bottom kept for Android/iOS home indicator */
+  padding-bottom: env(safe-area-inset-bottom);
+  box-sizing: border-box;
+}
+
+/* Safe Area Utilities for iOS Notch/Island */
+.safe-pt {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-mt {
+  margin-top: env(safe-area-inset-top);
+}
+.safe-top {
+  top: env(safe-area-inset-top) !important;
+}
+
+/* Fix Sonner Toasts on iOS */
+.is-ios [data-sonner-toaster] {
+  margin-top: env(safe-area-inset-top, 47px) !important;
+}
+
+
 body {
   margin: 0;
+  overscroll-behavior-y: none;
+  overflow-x: hidden;
   font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -136,3 +168,4 @@ body {
 .grecaptcha-badge {
   visibility: hidden !important;
 }
+

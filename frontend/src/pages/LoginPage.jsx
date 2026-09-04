@@ -4,9 +4,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Phone, ArrowRight, Shield, User as UserIcon, Users as UsersIcon,
   Globe, Sparkles, AlertCircle, RefreshCw, CheckCircle2, ChevronLeft,
-  Lock, KeyRound, LogIn,
+  Lock, KeyRound, LogIn, Trash2
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth, resolvePhoneAsRole } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { doc, setDoc } from 'firebase/firestore';
@@ -15,6 +15,38 @@ import { signInWithCustomToken } from 'firebase/auth';
 import { db, functions, auth } from '../lib/firebase';
 import logoSrc from '../assets/logo.png';
 
+// ─── Saved Accounts Utils ───────────────────────────────────────────────────
+const getSavedAccounts = () => {
+  try {
+    const raw = localStorage.getItem('stpauls_saved_accounts');
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+const saveAccount = (phone, role, name = '') => {
+  if (!phone || !role) return;
+  const accounts = getSavedAccounts();
+  const existingIndex = accounts.findIndex(a => a.phone === phone && a.role === role);
+  const newAccount = { phone, role, name, lastUsed: Date.now() };
+  
+  if (existingIndex >= 0) {
+    accounts[existingIndex] = newAccount;
+  } else {
+    accounts.push(newAccount);
+  }
+  
+  accounts.sort((a, b) => b.lastUsed - a.lastUsed);
+  localStorage.setItem('stpauls_saved_accounts', JSON.stringify(accounts.slice(0, 5)));
+};
+
+const removeSavedAccount = (phone, role) => {
+  const accounts = getSavedAccounts();
+  const filtered = accounts.filter(a => !(a.phone === phone && a.role === role));
+  localStorage.setItem('stpauls_saved_accounts', JSON.stringify(filtered));
+};
+
 // ─── Roles ───────────────────────────────────────────────────────────────────
 const ROLES = [
   { id: 'admin',  labelKey: 'administrator', icon: Shield,    gradient: 'from-violet-500 to-indigo-600', hintKey: 'adminHint'  },
@@ -22,38 +54,12 @@ const ROLES = [
   { id: 'parent', labelKey: 'parent',        icon: UsersIcon, gradient: 'from-fuchsia-500 to-pink-600',  hintKey: 'parentHint' },
 ];
 
-// ─── OTP Input ───────────────────────────────────────────────────────────────
-function OtpInput({ value, onChange }) {
-  const refs = useRef([]);
-  const handle = (i, v) => {
-    const d = v.replace(/\D/g, '').slice(-1);
-    const a = value.split(''); a[i] = d;
-    const next = a.join('').padEnd(6, ' ').slice(0, 6);
-    onChange(next.trimEnd());
-    if (d && i < 5) refs.current[i + 1]?.focus();
-  };
-  const onKey = (i, e) => { if (e.key === 'Backspace' && !e.target.value && i > 0) refs.current[i - 1]?.focus(); };
-  const onPaste = (e) => {
-    const t = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    onChange(t); refs.current[Math.min(t.length, 5)]?.focus(); e.preventDefault();
-  };
-  return (
-    <div className="flex gap-3 justify-center" onPaste={onPaste}>
-      {Array.from({ length: 6 }).map((_, i) => (
-        <input key={i} ref={el => (refs.current[i] = el)}
-          type="text" inputMode="numeric" maxLength={1} value={value[i] || ''}
-          onChange={e => handle(i, e.target.value)} onKeyDown={e => onKey(i, e)}
-          className="h-16 w-12 sm:w-14 rounded-2xl border-2 border-border/60 bg-background/50 text-center text-2xl font-black outline-none focus:border-primary focus:bg-primary/5 focus:ring-4 focus:ring-primary/10 transition-all shadow-sm"
-        />
-      ))}
-    </div>
-  );
-}
+
 
 // ─── PIN Input ───────────────────────────────────────────────────────────────
 function PinInput({ value, onChange, autoFocus = false }) {
   const refs = useRef([]);
-  useEffect(() => { if (autoFocus) setTimeout(() => refs.current[0]?.focus(), 80); }, [autoFocus]);
+  useEffect(() => { if (autoFocus) setTimeout(() => refs.current[0]?.focus(), 80); },);
   const handle = (i, v) => {
     const d = v.replace(/\D/g, '').slice(-1);
     const a = value.split(''); a[i] = d;
@@ -104,27 +110,26 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
 
-  // step: 'role' | 'phone' | 'pin_enter' | 'otp' | 'pin_setup'
+  // step: 'role' | 'saved_accounts' | 'phone' | 'pin_enter' | 'otp' | 'pin_setup'
   const [step, setStep]             = useState('role');
+  const [pinSetupComplete, setPinSetupComplete] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [selectedRole, setSelectedRole] = useState(null);
   const [phone, setPhone]           = useState('');
-  const [otp, setOtp]               = useState('');
   const [phoneDisplay, setPhoneDisplay] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState('');
-  const [countdown, setCountdown]   = useState(0);
-  const [devOtp, setDevOtp]         = useState(null);
-  const [channel, setChannel]       = useState('whatsapp');
   const [setupPin, setSetupPin]     = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [loginPin, setLoginPin]     = useState('');
+  const [isFirstTimeParent, setIsFirstTimeParent] = useState(false);
   const timerRef = useRef(null);
 
   useEffect(() => {
-    if (user && ['role', 'phone', 'pin_enter'].includes(step)) {
+    if (user && (pinSetupComplete || ['role', 'phone', 'pin_enter'].includes(step))) {
       navigate('/dashboard', { replace: true });
     }
-  }, [user, step, navigate]);
+  }, [user, step, pinSetupComplete, navigate]);
 
   const startCountdown = () => {
     setCountdown(30); clearInterval(timerRef.current);
@@ -141,36 +146,47 @@ export default function LoginPage() {
     
     if (submitting) return; setSubmitting(true);
     try {
+      const validateRole = httpsCallable(functions, 'validatePhoneRole');
+      const roleCheck = await validateRole({ phone: digits, role: selectedRole });
+      
+      if (!roleCheck.data.valid) {
+        setError(`This phone number is not registered for the ${selectedRole} role.`);
+        setSubmitting(false);
+        return;
+      }
+      
       const checkPin = httpsCallable(functions, 'checkPinExists');
       const res = await checkPin({ phone: digits });
       setSubmitting(false);
       
       if (res.data.hasPin) {
+        setIsFirstTimeParent(false);
         setStep('pin_enter');
-        return;
+      } else {
+        if (selectedRole === 'parent') {
+          setIsFirstTimeParent(true);
+          setStep('pin_enter');
+        } else {
+          setStep('pin_setup');
+        }
       }
     } catch (err) {
       console.error("checkPinExists error:", err);
+      setError("Failed to verify phone number. Please check your connection.");
       setSubmitting(false);
-      // Fallback to OTP on error
     }
-
-    await doSendOTP(digits);
   };
 
-  const doSendOTP = async (digits) => {
+  const handleForgotPin = async () => {
     if (submitting) return; setSubmitting(true);
-    const res = await sendOTP(digits, selectedRole);
-    setSubmitting(false);
-    if (res.ok) {
-      setPhoneDisplay(`+91 ${digits.slice(0, 5)} ${digits.slice(5)}`);
-      setChannel(res.channel || 'whatsapp');
-      if (res.devOtp) { setDevOtp(res.devOtp); toast.info('Dev OTP shown below', { duration: 8000 }); }
-      else if (res.channel === 'whatsapp') toast.success(`OTP sent to WhatsApp (+91 ${digits})`);
-      else toast.success(`OTP sent via SMS to +91 ${digits}`);
-      setStep('otp'); startCountdown();
-    } else {
-      setError(res.error || 'Failed to send OTP');
+    try {
+      const requestPinReset = httpsCallable(functions, 'requestPinReset');
+      await requestPinReset({ phone: phone.replace(/\D/g, ''), role: selectedRole });
+      toast.success("Reset request sent to Administration.");
+      setSubmitting(false);
+    } catch (err) {
+      setError("Failed to send reset request.");
+      setSubmitting(false);
     }
   };
 
@@ -182,20 +198,29 @@ export default function LoginPage() {
     
     if (submitting) return; setSubmitting(true);
     try {
-      const verifyPinAndLogin = httpsCallable(functions, 'verifyPinAndLogin');
-      const res = await verifyPinAndLogin({ phone: phone.replace(/\D/g, ''), pin: code });
+      let customToken;
+      if (isFirstTimeParent) {
+        if (code !== '1234') {
+          setError("Incorrect PIN. Please use your default PIN (1234).");
+          setLoginPin(''); setSubmitting(false); return;
+        }
+        const registerFirstTimePin = httpsCallable(functions, 'registerFirstTimePin');
+        const res = await registerFirstTimePin({ phone: phone.replace(/\D/g, ''), pin: code, role: selectedRole });
+        customToken = res.data.token;
+      } else {
+        const loginWithPin = httpsCallable(functions, 'loginWithPin');
+        const res = await loginWithPin({ phone: phone.replace(/\D/g, ''), pin: code });
+        customToken = res.data.token;
+      }
       
-      const customToken = res.data.token;
       await signInWithCustomToken(auth, customToken);
       
       setAppLocked(false);
-      setPinSetSession(true); // Don't prompt for PIN setup or Lock Screen right away
+      setPinSetSession(true); 
+      
+      saveAccount(phone.replace(/\D/g, ''), selectedRole);
       
       toast.success("Logged in successfully!");
-      // We do NOT navigate here manually.
-      // signInWithCustomToken will trigger onAuthStateChanged in AuthContext.
-      // Once `user` is populated, the useEffect at the top of this component
-      // will navigate to /dashboard automatically. This prevents a race condition.
     } catch (err) {
       console.error("PIN Login Error:", err);
       setError("Incorrect PIN. Please try again.");
@@ -204,26 +229,7 @@ export default function LoginPage() {
     }
   };
 
-  // ── Verify OTP ────────────────────────────────────────────────────────────
-  const handleVerifyOTP = async (e, directVal) => {
-    e?.preventDefault(); setError('');
-    const code = (directVal || otp).replace(/\s/g, '');
-    if (code.length !== 6) { setError('Please enter the complete 6-digit OTP'); return; }
-    if (submitting) return; setSubmitting(true);
-    const res = await verifyOTP(code, `+91${phone.replace(/\D/g, '')}`);
-    setSubmitting(false);
-    if (res.ok) {
-      setAppLocked(false); setPinSetSession(true);
-      setSetupPin(''); setConfirmPin('');
-      setStep('pin_setup');
-    } else {
-      const msg = res.error || 'Invalid OTP';
-      setError(msg); toast.error(msg);
-      if (msg.toLowerCase().includes('not the admin') || msg.toLowerCase().includes('not registered as')) {
-        setTimeout(() => { setStep('role'); setPhone(''); setOtp(''); setError(''); }, 2800);
-      }
-    }
-  };
+  const submittingRef = useRef(false);
 
   // ── Save PIN ──────────────────────────────────────────────────────────────
   const handleSavePin = async (e) => {
@@ -232,45 +238,46 @@ export default function LoginPage() {
     if (setupPin.length !== 4) { setError('PIN must be 4 digits'); return; }
     if (submitting) return; setSubmitting(true);
     try {
-      const hashedPin = btoa(setupPin + 'SP');
-
-      // Read current session profile from localStorage
-      const sessionStr = localStorage.getItem('stpauls_session');
-      const session = sessionStr ? JSON.parse(sessionStr) : null;
-      const profileData = session?.p || {};
-      const uid = session?.u?.uid || user?.uid;
-
-      // 1. Save to Firestore as backup
-      if (uid) {
-        const p10 = phone.replace(/\D/g, '').slice(-10);
-        await setDoc(doc(db, 'users', uid), { pin: hashedPin, phone, phone10: p10 }, { merge: true });
-        // Update session profile with pin field too
-        if (session) {
-          session.p = { ...session.p, pin: hashedPin };
-          localStorage.setItem('stpauls_session', JSON.stringify(session));
-        }
+      if (!auth.currentUser) {
+         // First time setup, no auth yet
+         const registerFirstTimePin = httpsCallable(functions, 'registerFirstTimePin');
+         const res = await registerFirstTimePin({ phone: phone.replace(/\D/g, ''), pin: setupPin, role: selectedRole });
+         const customToken = res.data.token;
+         await signInWithCustomToken(auth, customToken);
       }
 
-      toast.success('PIN set! Next time, just enter your PIN — no OTP.');
-      navigate('/dashboard');
+      setAppLocked(false);
+      setPinSetSession(true);
+
+      saveAccount(phone.replace(/\D/g, ''), selectedRole);
+      toast.success('PIN set! Next time, just enter your PIN.');
+      setPinSetupComplete(true);
     } catch (err) {
+      console.error("PIN setup error:", err);
       setError('Failed to save PIN. Please try again.');
       setSubmitting(false);
     }
   };
 
-  const resendOTP = async () => {
-    if (countdown > 0) return;
-    setOtp(''); setError(''); setDevOtp(null);
-    await doSendOTP(phone.replace(/\D/g, ''));
-  };
+
 
   const goBack = () => {
     setError('');
     if (step === 'pin_setup') navigate('/dashboard');
-    else if (step === 'pin_enter') { setStep('phone'); setLoginPin(''); }
-    else if (step === 'otp') { setStep('phone'); setOtp(''); setDevOtp(null); }
-    else if (step === 'phone') { setStep('role'); setPhone(''); setSelectedRole(null); }
+    else if (step === 'pin_enter') { 
+      const hasSaved = getSavedAccounts().some(a => a.role === selectedRole);
+      setStep(hasSaved ? 'saved_accounts' : 'phone'); 
+      setLoginPin(''); 
+    }
+    else if (step === 'phone') { 
+      const hasSaved = getSavedAccounts().some(a => a.role === selectedRole);
+      setStep(hasSaved ? 'saved_accounts' : 'role'); 
+      setPhone(''); 
+    }
+    else if (step === 'saved_accounts') {
+      setStep('role');
+      setSelectedRole(null);
+    }
   };
 
   const switchLang = () => i18n.changeLanguage(i18n.language === 'te' ? 'en' : 'te');
@@ -325,10 +332,10 @@ export default function LoginPage() {
       </div>
 
       {/* ── RIGHT auth pane ── */}
-      <div className="flex-1 flex flex-col relative min-h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col relative min-h-screen overflow-hidden safe-pt">
         <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-primary/3 pointer-events-none" />
 
-        <button onClick={switchLang} className="absolute top-5 right-5 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted hover:bg-muted/80 text-xs font-bold tracking-wider uppercase transition-colors">
+        <button onClick={switchLang} className="absolute safe-top mt-2 right-5 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted hover:bg-muted/80 text-xs font-bold tracking-wider uppercase transition-colors">
           <Globe className="h-3.5 w-3.5" />{i18n.language === 'te' ? 'తెలుగు' : 'EN'}
         </button>
 
@@ -357,7 +364,13 @@ export default function LoginPage() {
                       const Icon = r.icon;
                       return (
                         <motion.button key={r.id} whileHover={{ scale: 1.012, x: 3 }} whileTap={{ scale: 0.988 }}
-                        onClick={() => { setSelectedRole(r.id); setLoginRole(r.id); setStep('phone'); setError(''); }}
+                        onClick={() => { 
+                          setSelectedRole(r.id); 
+                          setLoginRole(r.id); 
+                          setError(''); 
+                          const hasSaved = getSavedAccounts().some(a => a.role === r.id);
+                          setStep(hasSaved ? 'saved_accounts' : 'phone');
+                        }}
                           className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-border hover:border-primary/40 bg-card hover:bg-muted/40 transition-all text-left group">
                           <div className={`h-12 w-12 rounded-2xl bg-gradient-to-br ${r.gradient} grid place-items-center flex-shrink-0 shadow-lg`}>
                             <Icon className="h-5 w-5 text-white" />
@@ -370,6 +383,63 @@ export default function LoginPage() {
                         </motion.button>
                       );
                     })}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* ── Saved Accounts ── */}
+              {step === 'saved_accounts' && (
+                <motion.div key="saved_accounts" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.2 }}>
+                  <button onClick={goBack} className="mb-6 flex items-center gap-1.5 text-sm font-bold text-muted-foreground hover:text-foreground transition-colors">
+                    <ChevronLeft className="h-4 w-4" />{t('backToRoles', 'Back to Roles')}
+                  </button>
+                  <h2 className="font-display font-black text-4xl tracking-tighter mb-1">Choose an account</h2>
+                  <p className="text-sm text-muted-foreground mb-8">Select a recently used account to securely log in with your PIN.</p>
+                  
+                  <div className="space-y-3">
+                    {getSavedAccounts().filter(a => a.role === selectedRole).map(acc => (
+                      <motion.button key={`${acc.phone}-${refreshKey}`} whileHover={{ scale: 1.012, x: 3 }} whileTap={{ scale: 0.988 }}
+                        onClick={() => { setPhone(acc.phone); setStep('pin_enter'); }}
+                        className="w-full flex items-center justify-between p-4 rounded-2xl border-2 border-border hover:border-primary/40 bg-card hover:bg-muted/40 transition-all text-left group">
+                        <div className="flex items-center gap-4">
+                          <div className="h-12 w-12 rounded-full bg-primary/10 text-primary grid place-items-center flex-shrink-0">
+                            <UserIcon className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <div className="font-bold text-base tracking-wide">+91 {acc.phone}</div>
+                            <div className="text-xs text-muted-foreground capitalize">{acc.role} Account</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeSavedAccount(acc.phone, acc.role);
+                              setRefreshKey(k => k + 1);
+                              
+                              // Auto-close if no accounts left
+                              const remaining = getSavedAccounts().filter(a => a.role === selectedRole);
+                              if (remaining.length === 0) {
+                                setStep('phone');
+                              }
+                            }}
+                            className="p-2 text-muted-foreground/30 hover:text-rose-500 hover:bg-rose-500/10 rounded-full transition-all"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                          <ArrowRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-primary transition-all" />
+                        </div>
+                      </motion.button>
+                    ))}
+                    
+                    <motion.button whileHover={{ scale: 1.012 }} whileTap={{ scale: 0.988 }}
+                      onClick={() => { setPhone(''); setStep('phone'); }}
+                      className="w-full flex items-center gap-4 p-4 rounded-2xl border-2 border-dashed border-border hover:border-primary/40 bg-transparent hover:bg-muted/20 transition-all text-left text-muted-foreground hover:text-foreground mt-4 group">
+                      <div className="h-10 w-10 rounded-full bg-muted grid place-items-center flex-shrink-0 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                        <UsersIcon className="h-4 w-4" />
+                      </div>
+                      <div className="font-bold text-sm">Use another account</div>
+                    </motion.button>
                   </div>
                 </motion.div>
               )}
@@ -388,7 +458,7 @@ export default function LoginPage() {
                       <div className="mt-2 flex items-center gap-2 rounded-2xl border-2 border-border bg-card px-4 h-14 focus-within:border-primary transition-colors shadow-sm">
                         <Phone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                         <span className="text-sm font-bold text-muted-foreground border-r border-border pr-3 mr-1">+91</span>
-                        <input type="tel" value={phone} autoFocus
+                        <input type="tel" value={phone}
                           onChange={e => { setPhone(e.target.value.replace(/\D/g, '').slice(0, 10)); setError(''); }}
                           placeholder="XXXXXXXXXX"
                           className="flex-1 bg-transparent font-bold text-base outline-none placeholder:text-muted-foreground/30 min-w-0" />
@@ -397,49 +467,15 @@ export default function LoginPage() {
                     {error && <ErrorBox msg={error} />}
                     <button type="submit" disabled={submitting || phone.length !== 10}
                       className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-bold flex items-center justify-center gap-2 hover:bg-primary/90 disabled:opacity-50 transition-all shadow-lg shadow-primary/20 active:scale-[0.98]">
-                      {submitting
-                        ? <RefreshCw className="h-5 w-5 animate-spin" />
-                        : <>{t('sendOTP')} <ArrowRight className="h-4 w-4" /></>}
+                      {submitting 
+                        ? <><RefreshCw className="h-5 w-5 animate-spin" /> Please wait</> 
+                        : <>Continue <ArrowRight className="h-4 w-4" /></>}
                     </button>
                   </form>
                 </motion.div>
               )}
 
-              {/* ── OTP verification ── */}
-              {step === 'otp' && (
-                <motion.div key="otp" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.2 }}>
-                  <button onClick={goBack} className="mb-6 flex items-center gap-1.5 text-sm font-bold text-muted-foreground hover:text-foreground transition-colors">
-                    <ChevronLeft className="h-4 w-4" />{t('changeNumber')}
-                  </button>
-                  <h2 className="font-display font-black text-4xl tracking-tighter mb-1">{t('verifyOTP')}</h2>
-                  <p className="text-sm text-muted-foreground mb-2">
-                    {t('otpSentTo')} <span className="font-bold text-foreground">{phoneDisplay}</span>
-                    {channel === 'whatsapp' && <span className="text-emerald-500"> · WhatsApp</span>}
-                  </p>
-                  <div className="space-y-6 mt-8">
-                    <OtpInput value={otp} onChange={val => {
-                      setOtp(val);
-                      if (val.replace(/\s/g, '').length === 6) handleVerifyOTP(null, val);
-                    }} />
-                    {devOtp && (
-                      <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 text-sm font-medium text-center">
-                        Dev OTP: <span className="font-black tracking-widest ml-2">{devOtp}</span>
-                      </div>
-                    )}
-                    {error && <ErrorBox msg={error} />}
-                    <button onClick={e => handleVerifyOTP(e)} disabled={submitting || otp.replace(/\s/g, '').length !== 6}
-                      className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-bold flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 active:scale-[0.98]">
-                      {submitting ? <RefreshCw className="h-5 w-5 animate-spin" /> : <>{t('verifyLogin')} <ArrowRight className="h-4 w-4" /></>}
-                    </button>
-                    <div className="text-center">
-                      <button onClick={resendOTP} disabled={countdown > 0 || submitting}
-                        className="text-sm font-bold text-muted-foreground hover:text-foreground disabled:opacity-40 transition-colors">
-                        {countdown > 0 ? t('resendIn', { seconds: countdown }) : t('resendOTP')}
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
+
 
               {/* ── PIN entry ── */}
               {step === 'pin_enter' && (
@@ -460,16 +496,16 @@ export default function LoginPage() {
                     <PinInput value={loginPin} onChange={val => {
                       setLoginPin(val);
                       if (val.length === 4) handlePinLogin(null, val);
-                    }} autoFocus />
+                    }} />
                     
                     {error && <ErrorBox msg={error} />}
                     <button type="submit" disabled={submitting || loginPin.length !== 4}
                       className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-bold flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 active:scale-[0.98]">
                       {submitting ? <RefreshCw className="h-5 w-5 animate-spin" /> : <><LogIn className="h-5 w-5" /> Login</>}
                     </button>
-                    <button type="button" onClick={() => { setStep('otp'); doSendOTP(phone.replace(/\D/g, '')); }}
+                    <button type="button" onClick={handleForgotPin} disabled={submitting}
                       className="w-full h-12 flex items-center justify-center gap-2 text-sm font-bold text-muted-foreground hover:text-primary transition-colors">
-                      <KeyRound className="h-4 w-4" /> Forgot PIN? Login with OTP
+                      <KeyRound className="h-4 w-4" /> Forgot PIN?
                     </button>
                   </form>
                 </motion.div>
@@ -494,13 +530,13 @@ export default function LoginPage() {
                   <form onSubmit={handleSavePin} className="space-y-6">
                     <div>
                       <p className="text-xs font-bold text-muted-foreground text-center tracking-widest uppercase mb-4">New PIN</p>
-                      <PinInput value={setupPin} onChange={setSetupPin} autoFocus />
+                      <PinInput value={setupPin} onChange={setSetupPin} />
                     </div>
                     <AnimatePresence>
                       {setupPin.length === 4 && (
                         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                           <p className="text-xs font-bold text-muted-foreground text-center tracking-widest uppercase mb-4">Confirm PIN</p>
-                          <PinInput value={confirmPin} onChange={setConfirmPin} autoFocus />
+                          <PinInput value={confirmPin} onChange={setConfirmPin} />
                         </motion.div>
                       )}
                     </AnimatePresence>

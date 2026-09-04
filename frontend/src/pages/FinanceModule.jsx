@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { listTransactions } from '../services/firebase/financeService';
 import { formatCurrency, getWhatsAppUrl } from '../lib/utils';
+import { useAuth } from '../contexts/AuthContext';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899'];
 
@@ -56,21 +57,29 @@ export default function FinanceModule() {
 
       {/* Nav cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { icon: IndianRupee, label: t('feeSetup'),      sub: 'Structures · terms',   color: 'from-indigo-500 to-violet-500',  to: '/dashboard/finance/setup' },
-          { icon: Wallet,      label: t('feeCollection'), sub: 'Receive · receipt',     color: 'from-emerald-500 to-teal-500',   to: '/dashboard/finance/collect' },
-          { icon: ListChecks,  label: 'Fee Status',        sub: 'Class-wise · overdue',  color: 'from-cyan-500 to-blue-500',      to: '/dashboard/finance/status' },
-          { icon: ListChecks,  label: 'Fee Defaulters',    sub: 'Track dues · slips',    color: 'from-rose-500 to-pink-500',      to: '/dashboard/finance/defaulters' },
-          { icon: ListChecks,  label: t('ledger'),         sub: 'Income · expense',      color: 'from-amber-500 to-orange-500',   to: '/dashboard/finance/ledger' },
-          { icon: TrendingUp,  label: t('payroll'),        sub: 'Staff payslips',        color: 'from-fuchsia-500 to-purple-500',      to: '/dashboard/finance/payroll' },
-        ].map((c) => (
-          <motion.button onClick={() => navigate(c.to)} whileHover={{ y: -5, scale: 1.02 }} key={c.label}
-            className="glass-morphism rounded-[2rem] p-5 text-left" data-testid={`finance-card-${c.label.split(' ').join('-')}`}>
-            <div className={`h-11 w-11 rounded-2xl bg-gradient-to-br ${c.color} grid place-items-center text-white`}><c.icon className="h-5 w-5" /></div>
-            <div className="mt-4 font-bold">{c.label}</div>
-            <div className="label-eyebrow text-muted-foreground mt-1">{c.sub}</div>
-          </motion.button>
-        ))}
+        {(() => {
+          const { profile } = useAuth();
+          const p = profile?.permissions || [];
+          const isAdmin = profile?.role === 'SCHOOL_ADMIN' || profile?.role === 'ADMIN';
+          const canAccess = (key) => isAdmin || p.includes('finance') || p.includes(key);
+
+          const allCards = [
+            { icon: IndianRupee, label: t('feeSetup'),      sub: 'Structures · terms',   color: 'from-indigo-500 to-violet-500',  to: '/dashboard/finance/setup', reqKey: 'finance.setup' },
+            { icon: Wallet,      label: t('feeCollection'), sub: 'Receive · receipt',     color: 'from-emerald-500 to-teal-500',   to: '/dashboard/finance/collect', reqKey: 'finance.collect' },
+            { icon: ListChecks,  label: 'Fee Status',        sub: 'Class-wise · overdue',  color: 'from-cyan-500 to-blue-500',      to: '/dashboard/finance/status', reqKey: 'finance.status' },
+            { icon: ListChecks,  label: 'Fee Defaulters',    sub: 'Track dues · slips',    color: 'from-rose-500 to-pink-500',      to: '/dashboard/finance/defaulters', reqKey: 'finance.defaulters' },
+            { icon: ListChecks,  label: t('ledger'),         sub: 'Income · expense',      color: 'from-amber-500 to-orange-500',   to: '/dashboard/finance/ledger', reqKey: 'finance.ledger' },
+            { icon: TrendingUp,  label: t('payroll'),        sub: 'Staff payslips',        color: 'from-fuchsia-500 to-purple-500',      to: '/dashboard/finance/payroll', reqKey: 'finance.payroll' },
+          ];
+          return allCards.filter(c => canAccess(c.reqKey)).map((c) => (
+            <motion.button onClick={() => navigate(c.to)} whileHover={{ y: -5, scale: 1.02 }} key={c.label}
+              className="glass-morphism rounded-[2rem] p-5 text-left" data-testid={`finance-card-${c.label.split(' ').join('-')}`}>
+              <div className={`h-11 w-11 rounded-2xl bg-gradient-to-br ${c.color} grid place-items-center text-white`}><c.icon className="h-5 w-5" /></div>
+              <div className="mt-4 font-bold">{c.label}</div>
+              <div className="label-eyebrow text-muted-foreground mt-1">{c.sub}</div>
+            </motion.button>
+          ));
+        })()}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

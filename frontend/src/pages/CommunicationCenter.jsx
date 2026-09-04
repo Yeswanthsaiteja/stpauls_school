@@ -12,6 +12,7 @@ import { addNotification } from '../services/firebase/notificationsService';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
 import { getCurrentAcademicYear } from '../utils';
+import { uploadToStorage } from '../lib/storageUtils';
 
 const TARGET_ROLES = ['ALL', 'STAFF', 'PARENT', 'STUDENT'];
 
@@ -27,8 +28,10 @@ export default function CommunicationCenter() {
   const [annLoading, setAnnLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [annForm, setAnnForm] = useState({ title: '', description: '', targetRole: 'ALL', targetClass: '', targetSection: '' });
+  const [annAttachment, setAnnAttachment] = useState(null);
   const [classes, setClasses] = useState([]);
   const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     listAnnouncements().then((data) => { setAnnList(data); setAnnLoading(false); });
@@ -39,7 +42,22 @@ export default function CommunicationCenter() {
     if (!annForm.title) return toast.error('Title required');
     setSending(true);
     try {
-      const row = await addAnnouncement({ ...annForm, academicYear, postedBy: profile?.fullName || 'Admin' });
+      let attachmentUrl = null;
+      let attachmentName = null;
+      if (annAttachment) {
+        toast.info('Uploading attachment...');
+        const path = `announcements/${Date.now()}_${annAttachment.name}`;
+        attachmentUrl = await uploadToStorage(annAttachment, path);
+        attachmentName = annAttachment.name;
+      }
+
+      const row = await addAnnouncement({ 
+        ...annForm, 
+        academicYear, 
+        postedBy: profile?.fullName || 'Admin',
+        attachmentUrl,
+        attachmentName
+      });
       if (row) {
         setAnnList((l) => [row, ...l]);
         
@@ -62,6 +80,8 @@ export default function CommunicationCenter() {
         }
 
         setAnnForm({ title: '', description: '', targetRole: 'ALL', targetClass: '', targetSection: '' });
+        setAnnAttachment(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
         toast.success('Announcement published');
       }
     } catch {
@@ -182,6 +202,11 @@ export default function CommunicationCenter() {
                         </span>
                       </div>
                       <p className="text-sm text-muted-foreground">{a.description}</p>
+                      {a.attachmentUrl && (
+                        <a href={a.attachmentUrl} target="_blank" rel="noreferrer" className="text-xs text-primary underline mt-1 inline-block">
+                          📎 {a.attachmentName || 'View Attachment'}
+                        </a>
+                      )}
                       <div className="label-eyebrow text-muted-foreground mt-2 flex items-center gap-2">
                         <Users className="h-3 w-3" />
                         {a.postedBy || 'Admin'} · {a.date}
@@ -213,6 +238,12 @@ export default function CommunicationCenter() {
                 className="mt-1 w-full h-11 px-4 rounded-2xl border border-border bg-card text-sm">
                 {TARGET_ROLES.map((r) => <option key={r}>{r}</option>)}
               </select>
+            </div>
+            
+            <div>
+              <label className="label-eyebrow text-muted-foreground">Attachment (Optional)</label>
+              <input type="file" ref={fileInputRef} onChange={(e) => setAnnAttachment(e.target.files[0])} 
+                className="mt-1 w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" />
             </div>
             
             {(annForm.targetRole === 'PARENT' || annForm.targetRole === 'STUDENT') && (

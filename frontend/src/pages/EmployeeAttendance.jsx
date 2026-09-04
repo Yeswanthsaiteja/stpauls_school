@@ -143,26 +143,34 @@ export default function EmployeeAttendance() {
       const { default: jsPDF } = await import('jspdf');
       const { default: autoTable } = await import('jspdf-autotable');
 
-      const doc = new jsPDF();
+      const doc = new jsPDF('landscape');
       doc.text(`Monthly Attendance Summary - ${month}`, 14, 15);
       
-      const tableData = filtered.map(e => [
-        e.fullName || '',
-        e.role || 'N/A',
-        e.workingDays || 0,
-        e.totalPresent || 0,
-        e.totalAbsent || 0,
-        e.totalLate || 0,
-        e.totalEarly || 0
-      ]);
+      const [y, m] = month.split('-');
+      const daysInMonth = new Date(y, m, 0).getDate();
+      const dayHeaders = Array.from({ length: daysInMonth }, (_, i) => String(i + 1));
+      
+      const tableData = filtered.map(e => {
+        const row = [e.fullName || '', e.role || 'N/A'];
+        for (let i = 1; i <= daysInMonth; i++) {
+          const dateStr = `${y}-${m}-${String(i).padStart(2, '0')}`;
+          row.push(e.dailyPunches?.[dateStr] || '-');
+        }
+        return row;
+      });
 
       autoTable(doc, {
         startY: 25,
-        head: [['Employee Name', 'Role', 'Total Punched Days', 'Present', 'Absent', 'Late Days', 'Early Leaves']],
+        head: [['Employee Name', 'Role', ...dayHeaders]],
         body: tableData,
         theme: 'grid',
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [79, 70, 229] }
+        styles: { fontSize: 6, cellPadding: 1 },
+        headStyles: { fillColor: [79, 70, 229], halign: 'center' },
+        bodyStyles: { halign: 'center' },
+        columnStyles: {
+          0: { cellWidth: 35, halign: 'left' },
+          1: { cellWidth: 25, halign: 'left' },
+        }
       });
 
       await savePDF(doc, `Attendance_Monthly_${month}.pdf`);

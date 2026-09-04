@@ -2,6 +2,8 @@
 import { initializeApp, getApps } from 'firebase/app';
 import {
   getAuth,
+  initializeAuth,
+  indexedDBLocalPersistence,
   connectAuthEmulator,
   RecaptchaVerifier,       // re-export for phone auth
   signInWithPhoneNumber,   // re-export for phone auth
@@ -36,7 +38,11 @@ let functions = null;
 
 if (isFirebaseConfigured) {
   app = getApps().length ? getApps()[0] : initializeApp(cfg);
-  auth = getAuth(app);
+  try {
+    auth = initializeAuth(app, { persistence: indexedDBLocalPersistence });
+  } catch (e) {
+    auth = getAuth(app);
+  }
   // Use a named Firestore database if provided, else default
   if (databaseId) {
     try {

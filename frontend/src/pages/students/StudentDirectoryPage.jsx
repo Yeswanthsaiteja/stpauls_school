@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutGrid, List, Search, Plus, Loader2, RefreshCw,
-  Download, ChevronDown, FileText, FileSpreadsheet, File, UserPlus
+  Download, ChevronDown, FileText, FileSpreadsheet, File, UserPlus, ImagePlus
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { listStudents, addStudent } from '../../services/firebase/studentsService';
@@ -30,6 +30,7 @@ function buildStudentRows(list) {
     'Mother':         s.motherName || '',
     'Phone':          s.fatherPhone || s.phoneNumber || '',
     'Category':       s.category || '',
+    'House':          s.house || '',
   }));
 }
 
@@ -145,6 +146,7 @@ export default function StudentDirectoryPage() {
   const [cls, setCls] = useState('');
   const [sec, setSec] = useState('');
   const [gender, setGender] = useState('');
+  const [house, setHouse] = useState('');
   const [status, setStatus] = useState('ACTIVE');
   const [academicYear, setAcademicYear] = useState(getCurrentAcademicYear());
   
@@ -172,9 +174,10 @@ export default function StudentDirectoryPage() {
     const matchC  = !cls    || s.className === cls;
     const matchS  = !sec    || s.section   === sec;
     const matchG  = !gender || (s.gender || '').toLowerCase() === gender.toLowerCase();
+    const matchH  = !house  || (s.house || '').toLowerCase() === house.toLowerCase();
     const matchSt = !status || s.status    === status;
-    return matchY && matchQ && matchC && matchS && matchG && matchSt;
-  }), [all, q, cls, sec, gender, status, academicYear]);
+    return matchY && matchQ && matchC && matchS && matchG && matchH && matchSt;
+  }), [all, q, cls, sec, gender, house, status, academicYear]);
 
   const toggleSelect = (id) => {
     const next = new Set(selectedIds);
@@ -257,6 +260,13 @@ export default function StudentDirectoryPage() {
           </div>
           <ExportDropdown list={list} prefix={exportPrefix} />
           <button
+            onClick={() => navigate('/dashboard/students/bulk-photos')}
+            className="h-10 px-4 rounded-2xl bg-secondary text-secondary-foreground text-xs font-bold flex items-center gap-2"
+            title="Bulk Photo Upload"
+          >
+            <ImagePlus className="h-3.5 w-3.5" />Bulk Upload Photos
+          </button>
+          <button
             onClick={() => navigate('/dashboard/students/admission-full')}
             className="h-10 px-4 rounded-2xl bg-primary text-primary-foreground text-xs font-bold flex items-center gap-2"
             data-testid="dir-add-btn"
@@ -299,9 +309,18 @@ export default function StudentDirectoryPage() {
           <option value="REMOVED">Removed</option>
         </select>
         <select value={gender} onChange={(e) => setGender(e.target.value)}
-          className="h-10 px-3 rounded-2xl border border-border bg-card text-sm col-span-2 md:col-span-1" data-testid="dir-gender">
+          className="h-10 px-3 rounded-2xl border border-border bg-card text-sm" data-testid="dir-gender">
           <option value="">All Genders</option>
           <option>Male</option><option>Female</option><option>Other</option>
+        </select>
+        <select value={house} onChange={(e) => setHouse(e.target.value)}
+          className="h-10 px-3 rounded-2xl border border-border bg-card text-sm md:col-span-2 lg:col-span-1" data-testid="dir-house">
+          <option value="">All Houses</option>
+          <option value="red">Red</option>
+          <option value="green">Green</option>
+          <option value="blue">Blue</option>
+          <option value="yellow">Yellow</option>
+          <option value="pink">Pink</option>
         </select>
       </div>
 
@@ -356,6 +375,7 @@ export default function StudentDirectoryPage() {
                     { label: 'Mother',         cls: 'min-w-[140px]' },
                     { label: 'Phone',          cls: 'min-w-[120px]' },
                     { label: 'Category',       cls: 'min-w-[100px]' },
+                    { label: 'House',          cls: 'min-w-[80px]'  },
                     { label: '',               cls: 'w-16'           },
                   ].map(({ label, cls: c }) => (
                     <th key={label} className={`px-3 py-3 text-left label-eyebrow text-muted-foreground font-semibold ${c}`}>{label}</th>
@@ -397,6 +417,7 @@ export default function StudentDirectoryPage() {
                     <td className="px-3 py-2.5 text-xs">{s.motherName || '—'}</td>
                     <td className="px-3 py-2.5 text-xs">{s.fatherPhone || s.phoneNumber || '—'}</td>
                     <td className="px-3 py-2.5 text-xs">{s.category || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs uppercase font-bold" style={{ color: s.house === 'red' ? '#E53935' : s.house === 'green' ? '#388E3C' : s.house === 'blue' ? '#1565C0' : s.house === 'yellow' ? '#F9A825' : s.house === 'pink' ? '#C2185B' : 'inherit' }}>{s.house || '—'}</td>
                     <td className="px-3 py-2.5 text-xs font-bold text-primary">View →</td>
                   </tr>
                 ))}
@@ -441,6 +462,11 @@ export default function StudentDirectoryPage() {
                   <span className={`px-2 py-0.5 rounded-full label-eyebrow ${s.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
                     {s.status}
                   </span>
+                  {s.house && (
+                    <span className="px-2 py-0.5 rounded-full label-eyebrow text-white" style={{ backgroundColor: s.house === 'red' ? '#E53935' : s.house === 'green' ? '#388E3C' : s.house === 'blue' ? '#1565C0' : s.house === 'yellow' ? '#F9A825' : s.house === 'pink' ? '#C2185B' : '#666' }}>
+                      {s.house}
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-muted-foreground mt-0.5 truncate">{s.fatherName || '—'}</div>
               </div>

@@ -1,17 +1,25 @@
 import {
-  collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, setDoc
+  collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, setDoc, query, where,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../../lib/firebase';
-import { safe } from './firestoreHelpers';
+import { safe, getDocsCached, invalidateCache as firestoreInvalidateCache, queryDocs } from './firestoreHelpers';
 
 const TENANT_ID = process.env.REACT_APP_TENANT_ID || 'stpauls';
+
+const libCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000;
+
+function invalidateCache(key) {
+  libCache.clear();
+  firestoreInvalidateCache(key);
+}
 
 function guard() {
   return isFirebaseConfigured && !!db;
 }
 
 async function fetchCol(name) {
-  const snap = await getDocs(collection(db, name));
+  const snap = await getDocsCached(name);
   return snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((r) => !r.tenantId || r.tenantId === TENANT_ID);
@@ -19,14 +27,21 @@ async function fetchCol(name) {
 
 // ─── Racks ─────────────────────────────────────────────────────────────────────
 export async function listRacks() {
+  const cacheKey = 'racks_all';
+  if (libCache.has(cacheKey)) {
+    const { data, timestamp } = libCache.get(cacheKey);
+    if (Date.now() - timestamp < CACHE_TTL) return data;
+  }
   if (!guard()) return [];
   return safe(async () => {
-    const list = await fetchCol('library_racks');
-    return list.sort((a, b) => {
+    const list = await queryDocs('library_racks', where('tenantId', '==', TENANT_ID));
+    const sorted = list.sort((a, b) => {
       const numA = parseInt(a.rackNumber) || 0;
       const numB = parseInt(b.rackNumber) || 0;
       return numA - numB;
     });
+    libCache.set(cacheKey, { data: sorted, timestamp: Date.now() });
+    return sorted;
   }, []);
 }
 
@@ -35,26 +50,45 @@ export async function addRack(data) {
   const payload = { ...data, tenantId: TENANT_ID, createdAt: serverTimestamp() };
   return safe(async () => {
     const r = await addDoc(collection(db, 'library_racks'), payload);
+    invalidateCache('library_racks');
     return { id: r.id, ...payload };
   }, null);
 }
 
 export async function deleteRack(id) {
   if (!guard()) return;
-  await safe(() => deleteDoc(doc(db, 'library_racks', id)));
+  await safe(async () => {
+    await deleteDoc(doc(db, 'library_racks', id));
+    invalidateCache('library_racks');
+  });
+}
+
+export async function updateRack(id, patch) {
+  if (!guard()) return;
+  await safe(async () => {
+    await updateDoc(doc(db, 'library_racks', id), { ...patch, updatedAt: serverTimestamp() });
+    invalidateCache('library_racks');
+  });
 }
 
 // ─── Books (Accession Register) ────────────────────────────────────────────────
 export async function listBooks() {
+  const cacheKey = 'books_all';
+  if (libCache.has(cacheKey)) {
+    const { data, timestamp } = libCache.get(cacheKey);
+    if (Date.now() - timestamp < CACHE_TTL) return data;
+  }
   if (!guard()) return [];
   return safe(async () => {
-    const list = await fetchCol('library_books');
-    return list.sort((a, b) => {
+    const list = await queryDocs('library_books', where('tenantId', '==', TENANT_ID));
+    const sorted = list.sort((a, b) => {
       // Sort by Sl. No if possible
       const sA = parseInt(a.slNo) || 0;
       const sB = parseInt(b.slNo) || 0;
       return sA - sB;
     });
+    libCache.set(cacheKey, { data: sorted, timestamp: Date.now() });
+    return sorted;
   }, []);
 }
 
@@ -63,6 +97,7 @@ export async function addBook(data) {
   const payload = { ...data, tenantId: TENANT_ID, createdAt: serverTimestamp(), status: 'AVAILABLE' };
   return safe(async () => {
     const r = await addDoc(collection(db, 'library_books'), payload);
+    invalidateCache('library_books');
     return { id: r.id, ...payload };
   }, null);
 }
@@ -88,28 +123,42 @@ export async function bulkAddBooks(booksArray) {
       }
       await currentBatch.commit();
     }
+    invalidateCache('library_books');
   });
 }
 
 export async function updateBook(id, patch) {
   if (!guard()) return;
-  await safe(() => updateDoc(doc(db, 'library_books', id), { ...patch, updatedAt: serverTimestamp() }));
+  await safe(async () => {
+    await updateDoc(doc(db, 'library_books', id), { ...patch, updatedAt: serverTimestamp() });
+    invalidateCache('library_books');
+  });
 }
 
 export async function deleteBook(id) {
   if (!guard()) return;
-  await safe(() => deleteDoc(doc(db, 'library_books', id)));
+  await safe(async () => {
+    await deleteDoc(doc(db, 'library_books', id));
+    invalidateCache('library_books');
+  });
 }
 
 // ─── Issues ───────────────────────────────────────────────────────────────────
 export async function listIssues(borrowerType = null) {
+  const cacheKey = 'issues_' + borrowerType;
+  if (libCache.has(cacheKey)) {
+    const { data, timestamp } = libCache.get(cacheKey);
+    if (Date.now() - timestamp < CACHE_TTL) return data;
+  }
   if (!guard()) return [];
   return safe(async () => {
-    let list = await fetchCol('library_issues');
-    if (borrowerType) {
-      list = list.filter(i => i.borrowerType === borrowerType);
-    }
-    return list.sort((a, b) => new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime());
+    const constraints = [where('tenantId', '==', TENANT_ID)];
+    if (borrowerType) constraints.push(where('borrowerType', '==', borrowerType));
+    
+    let list = await queryDocs('library_issues', ...constraints);
+    const sorted = list.sort((a, b) => new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime());
+    libCache.set(cacheKey, { data: sorted, timestamp: Date.now() });
+    return sorted;
   }, []);
 }
 
@@ -127,6 +176,8 @@ export async function issueBook(bookId, data) {
       updatedAt: serverTimestamp()
     });
     
+    invalidateCache('library_issues');
+    invalidateCache('library_books');
     return { id: r.id, ...payload };
   }, null);
 }
@@ -147,5 +198,8 @@ export async function returnBook(issueId, bookId) {
       currentIssueId: null,
       updatedAt: serverTimestamp()
     });
+    
+    invalidateCache('library_issues');
+    invalidateCache('library_books');
   });
 }

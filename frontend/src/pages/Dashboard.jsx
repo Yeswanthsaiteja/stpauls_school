@@ -4,13 +4,17 @@ import { Users, UserSquare2, IndianRupee, CalendarCheck, AlertCircle, RefreshCw,
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { listStudents } from '../services/firebase/studentsService';
-import { listEmployees } from '../services/firebase/employeesService';
-import { listTransactions } from '../services/firebase/financeService';
+import { listStudents, getStudentsCount } from '../services/firebase/studentsService';
+import { listEmployees, getEmployeesCount } from '../services/firebase/employeesService';
+import { listTransactions, getTransactionStats } from '../services/firebase/financeService';
 import { subscribeRecentActivities } from '../services/firebase/activityService';
 import { formatCurrency, exportToCSV } from '../lib/utils';
 import { useTenant } from '../contexts/TenantContext';
 import axios from 'axios';
+import { db, functions } from '../lib/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { toast } from 'sonner';
 
 const STAT_COLORS = {
   indigo:  { from: 'from-indigo-500',  to: 'to-violet-500',  ring: 'bg-indigo-500/10',  text: 'text-indigo-500'  },
@@ -51,9 +55,15 @@ export default function AdminDashboard() {
   const [insights, setInsights] = useState(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
 
-  const [students, setStudents] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [transactions, setTransactions] = useState([]);
+  const [stats, setStats] = useState({
+    students: 0,
+    staff: 0,
+    collection: '0%',
+    attendance: '94%',
+    pending: '₹0',
+    paidRaw: 0,
+    pendingRaw: 0,
+  });
 
   useEffect(() => {
     // DEBUG LOGGING TO CATCH TOKEN ISSUE
@@ -65,36 +75,60 @@ export default function AdminDashboard() {
       }
     });
 
-    listStudents({ status: 'ACTIVE' }).then(setStudents);
-    listEmployees({ status: 'ACTIVE' }).then(setEmployees);
-    listTransactions().then(setTransactions);
+    async function loadStats() {
+      try {
+        const [studentsCount, staffCount, txStats] = await Promise.all([
+          getStudentsCount({ status: 'ACTIVE' }),
+          getEmployeesCount({ status: 'ACTIVE' }),
+          getTransactionStats()
+        ]);
+        
+        const total = txStats.paid + txStats.pending;
+        const collectionPct = total ? Math.round((txStats.paid / total) * 100) : 0;
+        
+        setStats({
+          students: studentsCount,
+          staff: staffCount,
+          collection: `${collectionPct}%`,
+          attendance: '94%',
+          pending: formatCurrency(txStats.pending),
+          paidRaw: txStats.paid,
+          pendingRaw: txStats.pending
+        });
+      } catch (err) {
+        console.error("Error loading stats:", err);
+      }
+    }
+    loadStats();
   }, []);
 
-  const stats = useMemo(() => {
-    const paid = transactions.filter((x) => x.status === 'PAID').reduce((s, x) => s + x.amount, 0);
-    const pending = transactions.filter((x) => x.status !== 'PAID').reduce((s, x) => s + x.amount, 0);
-    const total = paid + pending;
-    const collectionPct = total ? Math.round((paid / total) * 100) : 0;
-    return {
-      students: students.length,
-      staff: employees.length,
-      collection: `${collectionPct}%`,
-      attendance: '94%',
-      pending: formatCurrency(pending),
-    };
-  }, [students, employees, transactions]);
-
-  const revenueData = useMemo(() => {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return days.map((d, i) => ({ day: d, value: 25000 + Math.round(Math.sin(i + tick) * 8000 + Math.random() * 12000) }));
-  }, [tick]);
 
   const [activity, setActivity] = useState([]);
+  const [resetRequests, setResetRequests] = useState([]);
+  const [resettingPin, setResettingPin] = useState(null);
 
   useEffect(() => {
-    const unsub = subscribeRecentActivities(setActivity);
-    return unsub;
+    const unsubActivity = subscribeRecentActivities(setActivity);
+    const unsubRequests = onSnapshot(query(collection(db, 'pin_reset_requests'), where('status', '==', 'PENDING')), (snap) => {
+      setResetRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => { unsubActivity(); unsubRequests(); };
   }, []);
+
+  const handleAdminResetPin = async (req) => {
+    if (resettingPin === req.id) return;
+    if (!window.confirm(`Reset PIN for +91 ${req.phone} (${req.role}) to default 1234?`)) return;
+    setResettingPin(req.id);
+    try {
+      const resetPin = httpsCallable(functions, 'adminResetPin');
+      await resetPin({ phone: req.phone, requestId: req.id });
+      toast.success(`PIN reset successfully for +91 ${req.phone}`);
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to reset PIN. Make sure you are an authorized admin.');
+    }
+    setResettingPin(null);
+  };
 
   const loadInsights = useCallback(async () => {
     setInsightsLoading(true);
@@ -119,10 +153,15 @@ export default function AdminDashboard() {
 
   useEffect(() => { loadInsights(); }, [loadInsights]);
 
-  const handleExport = () => {
-    exportToCSV(transactions.map((t) => ({
-      receipt: t.receiptNo, student: t.studentName, fee: t.feeName, amount: t.amount, status: t.status, date: t.paymentDate,
-    })), 'transactions.csv');
+  const handleExport = async () => {
+    try {
+      const txList = await listTransactions();
+      exportToCSV(txList.map((t) => ({
+        receipt: t.receiptNo, student: t.studentName, fee: t.feeName, amount: t.amount, status: t.status, date: t.paymentDate,
+      })), 'transactions.csv');
+    } catch (e) {
+      toast.error('Failed to export transactions');
+    }
   };
 
   return (
@@ -159,38 +198,38 @@ export default function AdminDashboard() {
       {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-5">
-          {/* Revenue chart */}
-          <div className="glass-morphism rounded-[2rem] p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <div className="label-eyebrow text-muted-foreground">{t('revenueDynamics')}</div>
-                <div className="font-display font-black text-2xl tracking-tighter mt-1 flex items-center gap-2">
-                  ₹2,16,500 <TrendingUp className="h-4 w-4 text-emerald-500" />
-                </div>
-              </div>
-              <div className="flex gap-1.5">
-                {['7D', '30D', '90D'].map((p, i) => (
-                  <button key={p} className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${i === 0 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{p}</button>
+          {/* PIN Reset Requests */}
+          <div className="glass-morphism rounded-[2rem] p-5 border-2 border-rose-500/20 bg-rose-500/5">
+            <div className="flex items-center gap-2 mb-4">
+              <AlertCircle className="h-5 w-5 text-rose-500" />
+              <div className="font-display font-black text-2xl tracking-tighter text-rose-500">PIN Reset Requests</div>
+            </div>
+            {resetRequests.length > 0 ? (
+              <div className="space-y-3 max-h-[240px] overflow-y-auto">
+                {resetRequests.map(r => (
+                  <div key={r.id} className="flex items-center justify-between p-4 rounded-2xl bg-card border border-border">
+                    <div className="flex items-center gap-4">
+                      <div className="h-10 w-10 rounded-full bg-rose-500/10 grid place-items-center text-rose-500">
+                        <Users className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-lg">+91 {r.phone}</div>
+                        <div className="text-sm text-muted-foreground capitalize">{r.role} Account</div>
+                      </div>
+                    </div>
+                    <button onClick={() => handleAdminResetPin(r)} disabled={resettingPin === r.id}
+                      className="h-10 px-5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-sm font-bold disabled:opacity-50 transition-colors shadow-lg shadow-rose-500/20">
+                      {resettingPin === r.id ? 'Resetting...' : 'Reset to 1234'}
+                    </button>
+                  </div>
                 ))}
               </div>
-            </div>
-            <div style={{ width: '100%', height: 240, minHeight: 240 }}>
-              <ResponsiveContainer width="100%" height={240}>
-                <AreaChart data={revenueData}>
-                  <defs>
-                    <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.55} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}K`} />
-                  <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 14 }} formatter={(v) => formatCurrency(v)} />
-                  <Area type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2.5} fill="url(#g1)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-[240px] text-rose-500/50">
+                <AlertCircle className="h-12 w-12 mb-2 opacity-50" />
+                <p className="font-medium">No pending reset requests</p>
+              </div>
+            )}
           </div>
 
           {/* Recent activity */}
@@ -268,6 +307,7 @@ export default function AdminDashboard() {
               ))}
             </div>
           </div>
+
         </div>
       </div>
     </div>

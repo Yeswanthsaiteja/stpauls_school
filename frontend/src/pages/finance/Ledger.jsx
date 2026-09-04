@@ -123,7 +123,7 @@ export default function Ledger() {
 
       <div className="glass-morphism rounded-[2rem] p-3 overflow-x-auto">
         <table className="w-full">
-          <thead><tr>{['Date', 'Type', 'Category', 'Description', 'Amount', 'Receipt / Bill'].map((h) => <th key={h} className={`label-eyebrow text-muted-foreground px-3 py-2 ${h === 'Receipt / Bill' || h === 'Amount' ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Date', 'Type', 'Category', 'Description', 'Collected By', 'Amount', 'Receipt / Bill'].map((h) => <th key={h} className={`label-eyebrow text-muted-foreground px-3 py-2 ${h === 'Receipt / Bill' || h === 'Amount' ? 'text-right' : 'text-left'}`}>{h}</th>)}</tr></thead>
           <tbody>
             {[...filteredTxs.map((t) => ({ ...t, _rowId: t.id, date: t.paymentDate?.slice(0,10), type: 'INCOME', category: t.feeName, description: t.studentName, amount: t.amount })),
               ...filteredExpenses.map((e) => ({ ...e, _rowId: e.id, date: e.date, type: 'EXPENSE', category: e.category, description: e.description, amount: e.amount }))]
@@ -134,6 +134,7 @@ export default function Ledger() {
                   <td className="px-3 py-2.5">{r.type === 'INCOME' ? <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 label-eyebrow flex items-center gap-1 w-fit"><TrendingUp className="h-3 w-3" />Income</span> : <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-500 label-eyebrow flex items-center gap-1 w-fit"><TrendingDown className="h-3 w-3" />Expense</span>}</td>
                   <td className="px-3 py-2.5 text-sm font-bold">{r.category}</td>
                   <td className="px-3 py-2.5 text-sm">{r.description}</td>
+                  <td className="px-3 py-2.5 text-sm font-medium text-muted-foreground">{r.type === 'INCOME' ? (r.collectedBy || 'Admin') : (r.paidBy || '—')}</td>
                   <td className={`px-3 py-2.5 font-display font-black tracking-tighter ${r.type === 'INCOME' ? 'text-emerald-600' : 'text-rose-600'}`}>{r.type === 'INCOME' ? '+' : '−'}{formatCurrency(r.amount)}</td>
                   <td className="px-3 py-2.5 text-right">
                     {r.type === 'INCOME' && (

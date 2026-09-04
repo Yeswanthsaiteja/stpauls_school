@@ -5,10 +5,9 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { TenantProvider } from './contexts/TenantContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import './i18n/config';
-import { OfflineBanner, usePushNotifications, isNative } from './hooks/useNative';
+import { OfflineBanner, usePushNotifications, isNative, platform } from './hooks/useNative';
 
 import LoginPage from './pages/LoginPage';
-import AppLockScreen from './components/AppLockScreen';
 import DashboardLayout from './components/DashboardLayout';
 import AdminDashboard from './pages/Dashboard';
 import StaffDashboard from './pages/StaffDashboard';
@@ -38,11 +37,13 @@ import EmployeeAdd from './pages/EmployeeAdd';
 import EmployeeDirectoryPage from './pages/employees/EmployeeDirectoryPage';
 import EmployeeRemoval from './pages/employees/EmployeeRemoval';
 import EmployeeRejoin from './pages/employees/EmployeeRejoin';
+import EmployeeIDCardStudio from './pages/employees/EmployeeIDCardStudio';
 import StudentDirectoryPage from './pages/students/StudentDirectoryPage';
 import StudentProfile from './pages/students/StudentProfile';
 import AdmissionFormFull from './pages/students/AdmissionFormFull';
 import StudentRemoval from './pages/students/StudentRemoval';
 import StudentRejoin from './pages/students/StudentRejoin';
+import BulkPhotoUpload from './pages/students/BulkPhotoUpload';
 import Certificates from './pages/students/Certificates';
 import ClassesSections from './pages/academic/ClassesSections';
 import FeeCollection from './pages/finance/FeeCollection';
@@ -92,73 +93,94 @@ function Stub({ title }) {
 }
 
 function App() {
+  useEffect(() => {
+    if (isNative) {
+      document.body.classList.add('is-native');
+
+      // Fix iOS status bar overlap — must be called at runtime in addition to config
+      // This is iOS-only; Android is unaffected
+      if (platform === 'ios') {
+        document.body.classList.add('is-ios');
+        try {
+          const { StatusBar, Style } = require('@capacitor/status-bar');
+          StatusBar.setOverlaysWebView({ overlay: false });
+          StatusBar.setStyle({ style: Style.Light });
+        } catch {}
+      }
+    }
+  }, []);
+
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <TenantProvider>
-          <BrowserRouter>
-            <OfflineBanner />
-            <Toaster position="top-right" richColors />
-            <Routes>
-              <Route path="/" element={<Navigate to="/login" replace />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route element={<ProtectedRoute />}>
-                <Route path="/dashboard" element={<DashboardLayout />}>
-                  <Route index element={<RoleHome />} />
-                  <Route path="staff-dashboard/*" element={<StaffDashboard />} />
-                  <Route path="parent-dashboard/*" element={<ParentDashboard />} />
-                  <Route path="students/*" element={<StudentsModule />} />
-                  <Route path="academic/*" element={<AcademicModule />} />
-                  <Route path="finance" element={<FinanceModule />} />
-                  <Route path="employees" element={<EmployeesModule />} />
-                  <Route path="attendance" element={<AttendanceModule />} />
-                  <Route path="library/*" element={<LibraryModule />} />
-                  <Route path="communication" element={<CommunicationCenter />} />
-                  <Route path="crm" element={<CRMPanel />} />
-                  <Route path="settings" element={<AccountSettings />} />
-                  <Route path="branding" element={<Stub title="Branding" />} />
-                  <Route path="id-cards" element={<IDCardStudio />} />
-                  <Route path="transport" element={<Transport />} />
-                  <Route path="hostel" element={<Hostel />} />
-                  <Route path="razorpay" element={<RazorpaySettings />} />
-                  <Route path="results-entry" element={<ResultsEntry />} />
-                  <Route path="student-attendance" element={<StudentAttendance />} />
-                  <Route path="attendance-status" element={<AttendanceStatus />} />
-                  <Route path="rfid-attendance" element={<RfidAttendance />} />
-                  <Route path="employee-attendance" element={<EmployeeAttendance />} />
-                  <Route path="leave-management" element={<LeaveManagement />} />
-                  <Route path="holidays" element={<HolidaysCalendar />} />
-                  <Route path="bulk-import" element={<BulkImport />} />
-                  <Route path="timetable" element={<Timetable />} />
-                  <Route path="employees/add" element={<EmployeeAdd />} />
-                  <Route path="employees/directory" element={<EmployeeDirectoryPage />} />
-                  <Route path="employees/removal" element={<EmployeeRemoval />} />
-                  <Route path="employees/rejoin" element={<EmployeeRejoin />} />
-                  <Route path="finance/setup" element={<FeeSetup />} />
-                  <Route path="finance/collect/:studentId" element={<FeeCollection />} />
-                  <Route path="finance/collect" element={<FeeCollection />} />
-                  <Route path="finance/defaulters" element={<FeeDefaulters />} />
-                  <Route path="finance/status" element={<FeeStatus />} />
-                  <Route path="students/directory" element={<StudentDirectoryPage />} />
-                  <Route path="students/profile/:id" element={<StudentProfile />} />
-                  <Route path="students/admission-full" element={<AdmissionFormFull />} />
-                  <Route path="students/edit/:id" element={<AdmissionFormFull />} />
-                  <Route path="students/removal" element={<StudentRemoval />} />
-                  <Route path="students/rejoin" element={<StudentRejoin />} />
-                  <Route path="students/certificates" element={<Certificates />} />
-                  <Route path="finance/ledger" element={<Ledger />} />
-                  <Route path="finance/payroll" element={<Payroll />} />
-                  <Route path="diary" element={<Diary />} />
-                  <Route path="exam-timetable" element={<ExamTimetablePage />} />
-                  <Route path="messaging" element={<TeacherMessaging />} />
+    <div className="w-full h-full bg-background">
+      <ThemeProvider>
+        <AuthProvider>
+          <TenantProvider>
+            <BrowserRouter>
+              <OfflineBanner />
+              <Toaster position="top-right" richColors />
+              <Routes>
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/login" element={<LoginPage />} />
+                <Route element={<ProtectedRoute />}>
+                  <Route path="/dashboard" element={<DashboardLayout />}>
+                    <Route index element={<RoleHome />} />
+                    <Route path="staff-dashboard/*" element={<StaffDashboard />} />
+                    <Route path="parent-dashboard/*" element={<ParentDashboard />} />
+                    <Route path="students/*" element={<StudentsModule />} />
+                    <Route path="academic/*" element={<AcademicModule />} />
+                    <Route path="finance" element={<FinanceModule />} />
+                    <Route path="employees" element={<EmployeesModule />} />
+                    <Route path="attendance" element={<AttendanceModule />} />
+                    <Route path="library/*" element={<LibraryModule />} />
+                    <Route path="communication" element={<CommunicationCenter />} />
+                    <Route path="crm" element={<CRMPanel />} />
+                    <Route path="settings" element={<AccountSettings />} />
+                    <Route path="branding" element={<Stub title="Branding" />} />
+                    <Route path="id-cards" element={<IDCardStudio />} />
+                    <Route path="transport" element={<Transport />} />
+                    <Route path="hostel" element={<Hostel />} />
+                    <Route path="razorpay" element={<RazorpaySettings />} />
+                    <Route path="results-entry" element={<ResultsEntry />} />
+                    <Route path="student-attendance" element={<StudentAttendance />} />
+                    <Route path="attendance-status" element={<AttendanceStatus />} />
+                    <Route path="rfid-attendance" element={<RfidAttendance />} />
+                    <Route path="employee-attendance" element={<EmployeeAttendance />} />
+                    <Route path="leave-management" element={<LeaveManagement />} />
+                    <Route path="holidays" element={<HolidaysCalendar />} />
+                    <Route path="bulk-import" element={<BulkImport />} />
+                    <Route path="timetable" element={<Timetable />} />
+                    <Route path="employees/add" element={<EmployeeAdd />} />
+                    <Route path="employees/directory" element={<EmployeeDirectoryPage />} />
+                    <Route path="employees/removal" element={<EmployeeRemoval />} />
+                    <Route path="employees/rejoin" element={<EmployeeRejoin />} />
+                    <Route path="employees/id-cards" element={<EmployeeIDCardStudio />} />
+                    <Route path="finance/setup" element={<FeeSetup />} />
+                    <Route path="finance/collect/:studentId" element={<FeeCollection />} />
+                    <Route path="finance/collect" element={<FeeCollection />} />
+                    <Route path="finance/defaulters" element={<FeeDefaulters />} />
+                    <Route path="finance/status" element={<FeeStatus />} />
+                    <Route path="students/directory" element={<StudentDirectoryPage />} />
+                    <Route path="students/profile/:id" element={<StudentProfile />} />
+                    <Route path="students/admission-full" element={<AdmissionFormFull />} />
+                    <Route path="students/edit/:id" element={<AdmissionFormFull />} />
+                    <Route path="students/removal" element={<StudentRemoval />} />
+                    <Route path="students/rejoin" element={<StudentRejoin />} />
+                    <Route path="students/bulk-photos" element={<BulkPhotoUpload />} />
+                    <Route path="students/certificates" element={<Certificates />} />
+                    <Route path="finance/ledger" element={<Ledger />} />
+                    <Route path="finance/payroll" element={<Payroll />} />
+                    <Route path="diary" element={<Diary />} />
+                    <Route path="exam-timetable" element={<ExamTimetablePage />} />
+                    <Route path="messaging" element={<TeacherMessaging />} />
+                  </Route>
                 </Route>
-              </Route>
-              <Route path="*" element={<Navigate to="/login" replace />} />
-            </Routes>
-          </BrowserRouter>
-        </TenantProvider>
-      </AuthProvider>
-    </ThemeProvider>
+                <Route path="*" element={<Navigate to="/login" replace />} />
+              </Routes>
+            </BrowserRouter>
+          </TenantProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </div>
   );
 }
 

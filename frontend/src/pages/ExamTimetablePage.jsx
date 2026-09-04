@@ -18,6 +18,7 @@ export default function ExamTimetablePage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterCls, setFilterCls] = useState('');
+  const [filterExam, setFilterExam] = useState('');
 
   // Set filterCls when activeChildClass changes for parents
   useEffect(() => {
@@ -66,7 +67,20 @@ export default function ExamTimetablePage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const visible = list.filter((e) => (!filterCls || e.className === filterCls));
+  const classFilteredList = list.filter(e => !filterCls || e.className === filterCls);
+  const uniqueExams = [...new Set(classFilteredList.map(e => e.examName))];
+
+  // Auto-select first exam if none selected or if current selection is invalid for this class
+  useEffect(() => {
+    if (uniqueExams.length > 0 && (!filterExam || !uniqueExams.includes(filterExam))) {
+      setFilterExam(uniqueExams[0]);
+    }
+  }, [uniqueExams, filterExam]);
+
+  const visible = classFilteredList.filter((e) => {
+    if (filterExam && e.examName !== filterExam) return false;
+    return true;
+  });
 
   return (
     <div className="space-y-6" data-testid="exam-timetable-page">
@@ -78,6 +92,15 @@ export default function ExamTimetablePage() {
       </div>
 
       <div className="flex items-center gap-2 mb-3">
+        <select 
+          value={filterExam} 
+          onChange={(e) => setFilterExam(e.target.value)} 
+          className="h-10 px-3 rounded-2xl border border-border bg-card text-sm min-w-[140px]"
+        >
+          <option value="">All Exams</option>
+          {uniqueExams.map((ex) => <option key={ex} value={ex}>{ex}</option>)}
+        </select>
+        
         {!isParent && (
           <select value={filterCls} onChange={(e) => setFilterCls(e.target.value)} className="h-10 px-3 rounded-2xl border border-border bg-card text-sm">
             <option value="">All Classes</option>{CLASS_OPTIONS.map((c) => <option key={c}>{c}</option>)}

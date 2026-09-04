@@ -48,15 +48,11 @@ export default function ClassesSections() {
     if (!payload.name) return toast.error('Class name required');
     if (!sections.length) return toast.error('At least one section required');
 
-    // ── Duplicate check: same class name + overlapping section ──
+    // ── Duplicate check: same class name ──
     if (modal.mode === 'add') {
-      const existing = list.find(c =>
-        c.name.trim().toLowerCase() === payload.name.toLowerCase() &&
-        c.sections?.some(s => sections.includes(s.toUpperCase()))
-      );
+      const existing = list.find(c => c.name.trim().toLowerCase() === payload.name.toLowerCase());
       if (existing) {
-        const overlap = existing.sections.filter(s => sections.includes(s.toUpperCase()));
-        toast.error(`Class "${payload.name}" – Section${overlap.length > 1 ? 's' : ''} "${overlap.join(', ')}" already exists! Please use a different section.`);
+        toast.error(`Class "${payload.name}" already exists! Please edit the existing class to add sections.`);
         return;
       }
     }
@@ -110,7 +106,7 @@ export default function ClassesSections() {
             <thead><tr>{['Class', 'Sections', 'Teacher 1', 'Teacher 2', 'Students', ''].map((h) => <th key={h} className="label-eyebrow text-muted-foreground text-left px-3 py-2">{h}</th>)}</tr></thead>
             <tbody>
               {list.map((c) => {
-                const cnt = students.filter(s => s.className === c.name).length;
+                const cnt = students.filter(s => s.className === c.name && (c.sections || []).includes(s.section)).length;
                 return (
                   <tr key={c.id} className="border-t border-border" data-testid={`cs-row-${c.id}`}>
                     <td className="px-3 py-3 font-display font-black tracking-tighter text-lg">{c.name}</td>
@@ -154,18 +150,16 @@ export default function ClassesSections() {
               </div>
               <div>
                 <label className="label-eyebrow text-muted-foreground">Class Teacher 1</label>
-                <select value={form.teacher1} onChange={(e) => setForm({ ...form, teacher1: e.target.value })} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-background text-sm" data-testid="cs-teacher1">
-                  <option value="">—</option>
-                  {employees.map((e) => <option key={e.id} value={e.fullName}>{e.fullName}</option>)}
-                </select>
+                <input list="employee-suggestions" value={form.teacher1} onChange={(e) => setForm({ ...form, teacher1: e.target.value })} placeholder="Type to search..." className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-background text-sm" data-testid="cs-teacher1" />
               </div>
               <div>
                 <label className="label-eyebrow text-muted-foreground">Class Teacher 2 (optional)</label>
-                <select value={form.teacher2} onChange={(e) => setForm({ ...form, teacher2: e.target.value })} className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-background text-sm" data-testid="cs-teacher2">
-                  <option value="">—</option>
-                  {employees.map((e) => <option key={e.id} value={e.fullName}>{e.fullName}</option>)}
-                </select>
+                <input list="employee-suggestions" value={form.teacher2} onChange={(e) => setForm({ ...form, teacher2: e.target.value })} placeholder="Type to search..." className="mt-1.5 w-full h-11 px-3 rounded-2xl border border-border bg-background text-sm" data-testid="cs-teacher2" />
               </div>
+              
+              <datalist id="employee-suggestions">
+                {employees.map((e) => <option key={e.id} value={e.fullName} />)}
+              </datalist>
               <button onClick={save} disabled={saving} className="h-11 w-full rounded-2xl bg-primary text-primary-foreground label-eyebrow disabled:opacity-60" data-testid="cs-save">
                 {saving ? 'Saving...' : 'Save'}
               </button>

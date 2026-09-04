@@ -23,10 +23,33 @@ import { toast } from 'sonner';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
-import { listStudents } from '../services/firebase/studentsService';
+import { listStudents, updateStudent } from '../services/firebase/studentsService';
 import { listClasses } from '../services/firebase/academicService';
 import { loadIdCardConfig, saveIdCardConfig } from '../services/firebase/idCardService';
 import { uploadToStorage } from '../lib/storageUtils';
+import ImageCropperModal from '../components/ImageCropperModal';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const getCorsProxyUrl = (url) => {
+  if (!url || typeof url !== 'string') return url;
+  if (url.includes('firebasestorage.googleapis.com')) {
+    return `https://wsrv.nl/?url=${encodeURIComponent(url)}&output=webp`;
+  }
+  return url;
+};
+
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return { r, g, b };
+}
+
+function lighten(hex, amount = 0.85) {
+  const { r, g, b } = hexToRgb(hex);
+  return `rgb(${Math.round(r + (255 - r) * amount)},${Math.round(g + (255 - g) * amount)},${Math.round(b + (255 - b) * amount)})`;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -41,20 +64,6 @@ const THEME_DEFAULTS = {
   yellow: { label: 'Yellow', default: '#F9A825', bg: '#FFFDE7' },
   pink:   { label: 'Pink',   default: '#C2185B', bg: '#FCE4EC' },
 };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function hexToRgb(hex) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return { r, g, b };
-}
-
-function lighten(hex, amount = 0.85) {
-  const { r, g, b } = hexToRgb(hex);
-  return `rgb(${Math.round(r + (255 - r) * amount)},${Math.round(g + (255 - g) * amount)},${Math.round(b + (255 - b) * amount)})`;
-}
 
 // ─── Single ID Card Component ─────────────────────────────────────────────────
 
@@ -71,10 +80,32 @@ function IdCard({
 }) {
   const [editing, setEditing] = useState(null);
   const [editVal, setEditVal] = useState('');
+  const [cropImageSrc, setCropImageSrc] = useState(null);
 
   const startEdit = (field, val) => { setEditing(field); setEditVal(val || ''); };
   const commitEdit = () => { if (editing) onFieldEdit?.(editing, editVal); setEditing(null); };
   const cancelEdit = () => setEditing(null);
+
+  const handlePhotoUpload = (e) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setCropImageSrc(e.target.result);
+    };
+    reader.readAsDataURL(f);
+  };
+
+  const handleCropComplete = async (croppedBlob) => {
+    setCropImageSrc(null);
+    try {
+      const ext = 'jpg';
+      const file = new File([croppedBlob], `photo.${ext}`, { type: croppedBlob.type });
+      const url = await uploadToStorage(file, `student-photos/${student.id}_${Date.now()}.${ext}`);
+      onPhotoChange?.(url);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const W = 242;
   const H = 390;
@@ -102,15 +133,16 @@ function IdCard({
         background: '#fff',
         borderBottom: `3px solid ${themeColor}`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '6px 8px',
-        minHeight: 66,
+        padding: 0,
+        height: 66,
+        overflow: 'hidden'
       }}>
         {/* Use uploaded logo from school config, fall back to /logo.png */}
         <img
-          src={logoDataUrl || '/logo.png'}
+          src={getCorsProxyUrl(logoDataUrl) || '/logo.png'}
           alt="St. Pauls High School"
           crossOrigin="anonymous"
-          style={{ maxHeight: 56, maxWidth: '100%', height: 'auto', display: 'block', objectFit: 'contain' }}
+          style={{ width: '100%', height: '100%', display: 'block', objectFit: 'fill' }}
         />
       </div>
 
@@ -127,7 +159,7 @@ function IdCard({
       <div style={{ position: 'absolute', bottom: 64, left: 4, zIndex: 2, display: 'flex', flexDirection: 'column', gap: 4 }}>
         {[0,1,2].map(i => (
           <svg key={i} width="14" height="10" viewBox="0 0 14 10">
-            <polyline points="1,1 7,9 13,1" fill="none" stroke={themeColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <polyline points="1,9 7,1 13,9" fill="none" stroke={themeColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         ))}
       </div>
@@ -143,16 +175,7 @@ function IdCard({
       <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8, position: 'relative', zIndex: 2 }}>
         <label style={{ cursor: readOnly ? 'default' : 'pointer', position: 'relative' }}>
           {!readOnly && (
-            <input type="file" accept="image/*" onChange={async e => {
-              const f = e.target.files?.[0]; if (!f) return;
-              try {
-                const ext = f.name.split('.').pop() || 'jpg';
-                const url = await uploadToStorage(f, `student-photos/${student.id}_${Date.now()}.${ext}`);
-                onPhotoChange?.(url);
-              } catch (err) {
-                console.error(err);
-              }
-            }} style={{ display: 'none' }} />
+            <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{ display: 'none' }} />
           )}
           <div style={{
             width: 126, height: 152,
@@ -164,7 +187,7 @@ function IdCard({
             position: 'relative',
           }}>
             {student.photoDataUrl
-              ? <img src={student.photoDataUrl} alt={student.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} crossOrigin="anonymous" />
+              ? <img src={getCorsProxyUrl(student.photoDataUrl)} alt={student.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} crossOrigin="anonymous" />
               : !readOnly && (
                 <div style={{ textAlign: 'center', color: '#aaa' }}>
                   <Upload size={20} />
@@ -205,7 +228,7 @@ function IdCard({
       </div>
 
       {/* ── Info Rows ── */}
-      <div style={{ marginTop: 8, padding: '0 18px 0 22px', zIndex: 2, position: 'relative' }}>
+      <div style={{ marginTop: 2, padding: '0 18px 0 22px', zIndex: 2, position: 'relative' }}>
         {[
           { label: 'Class/Sec',   value: `${student.className || '?'} / ${student.section || '?'}`, field: null },
           { label: 'Father Name', value: student.fatherName || '', field: 'fatherName' },
@@ -239,7 +262,7 @@ function IdCard({
 
       {/* ── Footer ── */}
       <div style={{
-        position: 'absolute', bottom: 20, left: 0, right: 0,
+        position: 'absolute', bottom: 24, left: 0, right: 0,
         borderTop: `1.5px solid ${themeColor}60`,
         padding: '5px 10px 0',
         display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
@@ -252,12 +275,12 @@ function IdCard({
         </div>
         {/* Signature */}
         <div style={{ textAlign: 'center', minWidth: 64 }}>
-          <div style={{ fontSize: 7, color: '#444', fontWeight: 700, marginBottom: 2 }}>Principal</div>
           {signatureDataUrl ? (
-            <img src={signatureDataUrl} alt="sig" style={{ height: 26, maxWidth: 66, objectFit: 'contain' }} crossOrigin="anonymous" />
+            <img src={getCorsProxyUrl(signatureDataUrl)} alt="sig" style={{ height: 26, maxWidth: 66, objectFit: 'contain', display: 'block', margin: '0 auto' }} crossOrigin="anonymous" />
           ) : (
             <div style={{ height: 22, borderBottom: '1px solid #999', width: 60, margin: '0 auto' }} />
           )}
+          <div style={{ fontSize: 7, color: '#444', fontWeight: 700, marginTop: 1 }}>Principal</div>
         </div>
       </div>
 
@@ -272,6 +295,15 @@ function IdCard({
           {student.admissionNo || ''}
         </span>
       </div>
+
+      {cropImageSrc && (
+        <ImageCropperModal
+          imageSrc={cropImageSrc}
+          onCropComplete={handleCropComplete}
+          onCancel={() => setCropImageSrc(null)}
+          aspectRatio={126 / 152}
+        />
+      )}
     </div>
   );
 }
@@ -324,8 +356,22 @@ export default function IDCardStudio() {
   // ── Load classes ──────────────────────────────────────────────────────────────
   useEffect(() => {
     listClasses().then((cls) => {
+      // Deduplicate classes and merge their sections
+      const mergedClassesMap = {};
+      cls.forEach(c => {
+        if (!mergedClassesMap[c.name]) {
+          mergedClassesMap[c.name] = { ...c, sections: new Set(c.sections || []) };
+        } else {
+          (c.sections || []).forEach(sec => mergedClassesMap[c.name].sections.add(sec));
+        }
+      });
+      const uniqueClasses = Object.values(mergedClassesMap).map(c => ({
+        ...c,
+        sections: Array.from(c.sections).sort()
+      }));
+
       const ORDER = ['Nursery', 'LKG', 'UKG', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
-      setAllClasses(cls.sort((a, b) => {
+      setAllClasses(uniqueClasses.sort((a, b) => {
         const ai = ORDER.indexOf(a.name); const bi = ORDER.indexOf(b.name);
         if (ai !== -1 && bi !== -1) return ai - bi;
         if (ai !== -1) return -1; if (bi !== -1) return 1;
@@ -361,7 +407,7 @@ export default function IDCardStudio() {
       filtered.forEach((s) => {
         const sv = saved?.assignments?.[s.id] || {};
         initial[s.id] = {
-          theme: sv.theme || (isPP ? 'pink' : 'blue'),
+          theme: s.house || sv.theme || '',
           photoDataUrl: sv.photoDataUrl || s.photoURL || '',
           name: sv.name || s.fullName || '',
           fatherName: sv.fatherName || s.fatherName || '',
@@ -384,8 +430,14 @@ export default function IDCardStudio() {
   const updateCardField = (sid, field, val) =>
     setCardData((cd) => ({ ...cd, [sid]: { ...cd[sid], [field]: val } }));
 
-  const setStudentTheme = (sid, theme) =>
+  const setStudentTheme = async (sid, theme) => {
     setCardData((cd) => ({ ...cd, [sid]: { ...cd[sid], theme } }));
+    try {
+      await updateStudent(sid, { house: theme });
+    } catch (e) {
+      toast.error('Failed to sync theme with student record');
+    }
+  };
 
   // ── Save ──────────────────────────────────────────────────────────────────────
   const handleSave = async () => {
@@ -600,7 +652,7 @@ export default function IDCardStudio() {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                 {students.map((s) => {
                   const cd = cardData[s.id] || {};
-                  const themeColor = themeColors[cd.theme] || '#1565C0';
+                  const themeColor = themeColors[cd.theme] || '#9CA3AF';
                   return (
                     <div key={s.id} className="flex items-center gap-3 p-3 rounded-2xl border border-border" style={{ borderLeft: `4px solid ${themeColor}` }}>
                       <div className="h-9 w-9 rounded-xl grid place-items-center text-white font-black text-sm flex-shrink-0"
@@ -670,7 +722,7 @@ export default function IDCardStudio() {
               {/* Theme assignment summary / Overview */}
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-6">
                 {availableThemes.map((t) => {
-                  const count = students.filter((s) => (cardData[s.id]?.theme || (isPrePrimary ? 'pink' : 'blue')) === t).length;
+                  const count = students.filter((s) => (cardData[s.id]?.theme || '') === t).length;
                   const color = themeColors[t] || '#888';
                   return (
                     <div key={t} className="glass-morphism rounded-2xl p-4 flex flex-col items-center text-center border-b-[6px]" style={{ borderBottomColor: color }}>
@@ -832,8 +884,8 @@ export default function IDCardStudio() {
                           admissionNo: s.admissionNo || '',
                           photoDataUrl: cd.photoDataUrl || '',
                         }}
-                        themeKey={cd.theme || (isPrePrimary ? 'pink' : 'blue')}
-                        themeColor={themeColors[cd.theme || (isPrePrimary ? 'pink' : 'blue')] || '#1565C0'}
+                        themeKey={cd.theme || ''}
+                        themeColor={themeColors[cd.theme] || '#9CA3AF'}
                         logoDataUrl={schoolConfig.logoDataUrl}
                         signatureDataUrl={schoolConfig.signatureDataUrl}
                         address={schoolConfig.address}
@@ -857,8 +909,8 @@ export default function IDCardStudio() {
         const s = enlargedStudent;
         const cd = cardData[s.id] || {};
         const isPrePrimary2 = ['nursery','lkg','ukg','pre-primary','pp'].includes((s.className || '').toLowerCase());
-        const themeKey2 = cd.theme || (isPrePrimary2 ? 'pink' : 'blue');
-        const themeColor2 = themeColors[themeKey2] || '#1565C0';
+        const themeKey2 = cd.theme || '';
+        const themeColor2 = themeColors[themeKey2] || '#9CA3AF';
         return (
           <div
             id="hidden-card-for-download"
@@ -879,8 +931,8 @@ export default function IDCardStudio() {
         const s = enlargedStudent;
         const cd = cardData[s.id] || {};
         const isPrePrimary2 = ['nursery','lkg','ukg','pre-primary','pp'].includes((s.className || '').toLowerCase());
-        const themeKey2 = cd.theme || (isPrePrimary2 ? 'pink' : 'blue');
-        const themeColor2 = themeColors[themeKey2] || '#1565C0';
+        const themeKey2 = cd.theme || '';
+        const themeColor2 = themeColors[themeKey2] || '#9CA3AF';
         const cardProps = {
           student: { id: s.id, name: cd.name || s.fullName || '', fatherName: cd.fatherName || '', contactNo: cd.contactNo || '', className: s.className || '', section: s.section || '', admissionNo: s.admissionNo || '', photoDataUrl: cd.photoDataUrl || '' },
           themeKey: themeKey2, themeColor: themeColor2,

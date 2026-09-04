@@ -11,10 +11,12 @@ export async function downloadElementAsPDF(elementId, filename = 'document.pdf')
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
-  const ratio = Math.min(pageW / canvas.width, pageH / canvas.height);
+  const marginX = 10;
+  const marginY = 10;
+  const ratio = Math.min((pageW - marginX * 2) / canvas.width, (pageH - marginY * 2) / canvas.height);
   const w = canvas.width * ratio;
   const h = canvas.height * ratio;
-  pdf.addImage(img, 'JPEG', (pageW - w) / 2, 30, w, h);
+  pdf.addImage(img, 'JPEG', (pageW - w) / 2, (pageH - h) / 2, w, h);
   await savePDF(pdf, filename);
 }
 

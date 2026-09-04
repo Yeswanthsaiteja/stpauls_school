@@ -11,16 +11,60 @@ const ROLES = ['Teacher', 'Class Teacher', 'Principal', 'Vice Principal', 'Accou
 const DEPARTMENTS = ['Teaching', 'Non teaching', 'Administration'];
 const EMP_TYPES = ['Probation', 'Permanent', 'Contract'];
 const AVAILABLE_MODULES = [
-  { key: 'students', label: 'Students' },
-  { key: 'academic', label: 'Academic' },
-  { key: 'finance', label: 'Finance' },
-  { key: 'employees', label: 'Employees' },
-  { key: 'attendance', label: 'Attendance' },
-  { key: 'communication', label: 'Communication' },
-  { key: 'crm', label: 'CRM / Support' },
-  { key: 'transport', label: 'Transport' },
-  { key: 'hostel', label: 'Hostel' },
-  { key: 'library', label: 'Library' }
+  { 
+    key: 'students', label: 'Students', 
+    submodules: [
+      {key: 'students.directory', label: 'Directory'}, 
+      {key: 'students.admission-full', label: 'Admission'}, 
+      {key: 'students.removal', label: 'Removal'}, 
+      {key: 'students.edit', label: 'Edit Student'}, 
+      {key: 'students.certificates', label: 'Certificates'},
+      {key: 'bulk-import', label: 'Import Data'},
+      {key: 'students.houses', label: 'House Assignment'},
+      {key: 'students.rejoin', label: 'Rejoin'}
+    ] 
+  },
+  { 
+    key: 'academic', label: 'Academic', 
+    submodules: [
+      {key: 'academic.classes', label: 'Classes & Sections'}, 
+      {key: 'academic.subject-topics', label: 'Subject Topics'},
+      {key: 'academic.timetable', label: 'Timetable'},
+      {key: 'academic.marks-entry', label: 'Marks Entry'},
+      {key: 'academic.results-sheet', label: 'Results Sheet'},
+      {key: 'academic.exam-setup', label: 'Exam Scheduling'}, 
+      {key: 'academic.result-scheduling', label: 'Result Scheduling'}, 
+      {key: 'academic.lesson-planning', label: 'Lesson Planning'},
+      {key: 'academic.year-end-promotion', label: 'Year-End Promotion'}
+    ] 
+  },
+  { 
+    key: 'finance', label: 'Finance', 
+    submodules: [
+      {key: 'finance.setup', label: 'Fee Setup'}, 
+      {key: 'finance.collect', label: 'Collection'}, 
+      {key: 'finance.defaulters', label: 'Defaulters'}, 
+      {key: 'finance.status', label: 'Status'}, 
+      {key: 'finance.payroll', label: 'Payroll'}, 
+      {key: 'finance.ledger', label: 'Ledger'}
+    ] 
+  },
+  { 
+    key: 'employees', label: 'Employees', 
+    submodules: [
+      {key: 'employees.directory', label: 'Directory'}, 
+      {key: 'employees.add', label: 'Add Employee'}, 
+      {key: 'employees.removal', label: 'Removal'}, 
+      {key: 'employees.rejoin', label: 'Rejoin'}
+    ] 
+  },
+  { key: 'attendance', label: 'Attendance', submodules: [] },
+  { key: 'communication', label: 'Communication', submodules: [] },
+  { key: 'crm', label: 'CRM / Support', submodules: [] },
+  { key: 'transport', label: 'Transport', submodules: [] },
+  { key: 'hostel', label: 'Hostel', submodules: [] },
+  { key: 'library', label: 'Library', submodules: [] },
+  { key: 'idcards', label: 'ID Cards', submodules: [] }
 ];
 
 // ─── Field & Select MUST live outside the parent component so React doesn't
@@ -200,23 +244,54 @@ export default function EmployeeAdd() {
         {/* ── Permissions ── */}
         <div>
           <div className="label-eyebrow text-muted-foreground mb-3 font-semibold">Additional Module Permissions</div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
             {AVAILABLE_MODULES.map(m => {
-              const isSelected = form.permissions.includes(m.key);
+              const isModuleSelected = form.permissions.includes(m.key);
               return (
-                <label key={m.key} className="flex items-center gap-2 cursor-pointer group">
-                  <div className={`h-5 w-5 rounded border grid place-items-center transition-colors ${isSelected ? 'bg-primary border-primary text-primary-foreground' : 'border-border bg-card group-hover:border-primary'}`}>
-                    {isSelected && <Check className="h-3 w-3" />}
-                  </div>
-                  <span className="text-sm select-none">{m.label}</span>
-                  <input type="checkbox" className="hidden"
-                    checked={isSelected}
-                    onChange={(e) => {
-                      const p = form.permissions;
-                      setForm({ ...form, permissions: e.target.checked ? [...p, m.key] : p.filter(k => k !== m.key) });
-                    }}
-                  />
-                </label>
+                <div key={m.key} className="bg-card border border-border p-3 rounded-2xl">
+                  <label className="flex items-center gap-2 cursor-pointer group mb-2">
+                    <div className={`h-5 w-5 rounded border grid place-items-center transition-colors ${isModuleSelected ? 'bg-primary border-primary text-primary-foreground' : 'border-border bg-card group-hover:border-primary'}`}>
+                      {isModuleSelected && <Check className="h-3 w-3" />}
+                    </div>
+                    <span className="font-bold text-sm select-none">{m.label}</span>
+                    <input type="checkbox" className="hidden"
+                      checked={isModuleSelected}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        let p = form.permissions.filter(k => k !== m.key && !(m.submodules || []).some(sub => sub.key === k));
+                        if (checked) {
+                          p.push(m.key);
+                        }
+                        setForm({ ...form, permissions: p });
+                      }}
+                    />
+                  </label>
+                  {(m.submodules && m.submodules.length > 0) && (
+                    <div className="pl-7 space-y-2 border-l-2 border-border ml-2.5 mt-2">
+                      {m.submodules.map(sub => {
+                        // If parent module is selected, all submodules are implicitly active
+                        const isSubSelected = isModuleSelected || form.permissions.includes(sub.key);
+                        return (
+                          <label key={sub.key} className={`flex items-center gap-2 cursor-pointer group ${isModuleSelected ? 'opacity-60 cursor-default' : ''}`}>
+                            <div className={`h-4 w-4 rounded border grid place-items-center transition-colors ${isSubSelected ? 'bg-primary border-primary text-primary-foreground' : 'border-border bg-card group-hover:border-primary'}`}>
+                              {isSubSelected && <Check className="h-2.5 w-2.5" />}
+                            </div>
+                            <span className="text-xs select-none">{sub.label}</span>
+                            <input type="checkbox" className="hidden"
+                              disabled={isModuleSelected}
+                              checked={isSubSelected}
+                              onChange={(e) => {
+                                if (isModuleSelected) return;
+                                const p = form.permissions;
+                                setForm({ ...form, permissions: e.target.checked ? [...p, sub.key] : p.filter(k => k !== sub.key) });
+                              }}
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>

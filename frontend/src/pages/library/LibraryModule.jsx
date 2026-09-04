@@ -24,7 +24,7 @@ export default function LibraryModule() {
       </header>
 
       {/* TABS */}
-      <div className="flex space-x-2 bg-muted/50 p-1.5 rounded-[2rem] w-fit">
+      <div className="flex space-x-2 bg-muted/50 p-1.5 rounded-[2rem] w-full md:w-fit overflow-x-auto">
         {tabs.map((tab) => {
           const isActive = loc.pathname.includes(`/library/${tab.path}`);
           const Icon = tab.icon;
@@ -32,11 +32,11 @@ export default function LibraryModule() {
             <NavLink
               key={tab.path}
               to={`/dashboard/library/${tab.path}`}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-[1.5rem] label-eyebrow transition-all ${
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-[1.5rem] label-eyebrow transition-all whitespace-nowrap shrink-0 ${
                 isActive ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted'
               }`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className="w-4 h-4 shrink-0" />
               {tab.name}
             </NavLink>
           );

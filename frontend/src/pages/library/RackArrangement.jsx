@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Search, LibrarySquare, BookCopy, Loader2, X, PlusCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { listRacks, addRack, deleteRack, listBooks, updateBook } from '../../services/firebase/libraryService';
+import { listRacks, addRack, deleteRack, updateRack, listBooks, updateBook } from '../../services/firebase/libraryService';
 
 export default function RackArrangement() {
   const [racks, setRacks] = useState([]);
@@ -11,7 +11,7 @@ export default function RackArrangement() {
 
   // Modals
   const [showAddRack, setShowAddRack] = useState(false);
-  const [showAssignBook, setShowAssignBook] = useState(false);
+  const [showAssignBookToShelf, setShowAssignBookToShelf] = useState(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -30,7 +30,7 @@ export default function RackArrangement() {
     const desc = fd.get('description');
     if (!num) return;
     
-    await addRack({ rackNumber: num, description: desc });
+    await addRack({ rackNumber: num, description: desc, shelves: [] });
     toast.success('Rack created');
     setShowAddRack(false);
     loadData();
@@ -55,11 +55,25 @@ export default function RackArrangement() {
     loadData();
   };
 
-  const handleAssignBooks = async (bookIds) => {
+  const handleAddShelf = async () => {
+    if (!selectedRack) return;
+    const currentShelves = selectedRack.shelves || [];
+    // Calculate next shelf letter (A, B, C...)
+    const nextChar = String.fromCharCode(65 + currentShelves.length);
+    const newShelfName = `${selectedRack.rackNumber}${nextChar}`;
+    
+    const updatedShelves = [...currentShelves, newShelfName];
+    await updateRack(selectedRack.id, { shelves: updatedShelves });
+    toast.success(`Shelf ${newShelfName} created`);
+    loadData();
+    setSelectedRack(prev => ({ ...prev, shelves: updatedShelves }));
+  };
+
+  const handleAssignBooks = async (bookIds, shelfName) => {
     if (bookIds.length === 0) return;
     try {
-      await Promise.all(bookIds.map(id => updateBook(id, { rackId: selectedRack.id })));
-      toast.success(`${bookIds.length} book(s) assigned to rack`);
+      await Promise.all(bookIds.map(id => updateBook(id, { rackId: selectedRack.id, rackInfo: shelfName })));
+      toast.success(`${bookIds.length} book(s) assigned to ${shelfName}`);
       loadData();
     } catch (e) {
       toast.error('Failed to assign books');
@@ -136,40 +150,62 @@ export default function RackArrangement() {
                 <h3 className="font-display font-black text-xl uppercase text-primary flex items-center gap-2">
                   <LibrarySquare className="w-5 h-5" /> Rack {selectedRack.rackNumber}
                 </h3>
-                <p className="text-sm text-muted-foreground mt-0.5">{selectedRack.description || 'Manage books in this rack'}</p>
+                <p className="text-sm text-muted-foreground mt-0.5">{selectedRack.description || 'Manage shelves and books'}</p>
               </div>
-              <button onClick={() => setShowAssignBook(true)} className="flex items-center gap-2 px-4 h-10 bg-primary text-primary-foreground hover:opacity-90 rounded-2xl label-eyebrow transition-colors">
-                <Plus className="w-4 h-4" /> Assign Book
+              <button onClick={handleAddShelf} className="flex items-center gap-2 px-4 h-10 bg-primary/10 text-primary hover:bg-primary/20 rounded-2xl label-eyebrow transition-colors">
+                <Plus className="w-4 h-4" /> Add Shelf
               </button>
             </div>
             
-            <div className="flex-1 overflow-y-auto thin-scrollbar p-5 bg-card/20">
-              {currentRackBooks.length === 0 ? (
+            <div className="flex-1 overflow-y-auto thin-scrollbar p-5 bg-card/20 space-y-6">
+              {!(selectedRack.shelves?.length > 0) ? (
                 <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                  <BookCopy className="w-12 h-12 mb-3 opacity-20" />
-                  <p className="font-bold">No available books in this rack</p>
-                  <p className="text-sm mt-1">Assign a book or books might be currently issued.</p>
+                  <LibrarySquare className="w-12 h-12 mb-3 opacity-20" />
+                  <p className="font-bold">No shelves in this rack</p>
+                  <p className="text-sm mt-1">Add a shelf to start organizing books.</p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {currentRackBooks.map(b => (
-                    <div key={b.id} className="flex items-center justify-between p-3 rounded-2xl bg-card border border-border hover:border-primary/30 transition-all">
-                      <div>
-                        <div className="font-bold text-sm text-foreground">{b.title}</div>
-                        <div className="flex gap-3 mt-1 text-xs text-muted-foreground font-semibold">
-                          <span>Acc: <span className="text-primary">{b.accessionNo}</span></span>
-                          <span>{b.author}</span>
+                selectedRack.shelves.map((shelfName) => {
+                  const booksInShelf = currentRackBooks.filter(b => b.rackInfo === shelfName);
+                  return (
+                    <div key={shelfName} className="bg-card border border-border rounded-[1.5rem] overflow-hidden">
+                      <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
+                        <div className="font-display font-black tracking-tight text-lg flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm">{shelfName.slice(-1)}</div>
+                          Shelf {shelfName}
                         </div>
+                        <button onClick={() => setShowAssignBookToShelf(shelfName)} className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground hover:opacity-90 rounded-xl label-eyebrow transition-colors text-xs">
+                          <Plus className="w-3.5 h-3.5" /> Assign Books
+                        </button>
                       </div>
-                      <button 
-                        onClick={() => handleRemoveBookFromRack(b.id)}
-                        className="px-3 py-1.5 text-xs font-bold text-amber-600 bg-amber-500/10 hover:bg-amber-500/20 rounded-xl transition-colors"
-                      >
-                        Remove
-                      </button>
+                      <div className="p-4">
+                        {booksInShelf.length === 0 ? (
+                          <div className="text-center text-sm text-muted-foreground py-4">No books in this shelf.</div>
+                        ) : (
+                          <div className="space-y-2">
+                            {booksInShelf.map(b => (
+                              <div key={b.id} className="flex items-center justify-between p-3 rounded-xl border border-border hover:border-primary/30 transition-all bg-background">
+                                <div>
+                                  <div className="font-bold text-sm text-foreground">{b.title}</div>
+                                  <div className="flex gap-3 mt-1 text-xs text-muted-foreground font-semibold">
+                                    <span>Acc: <span className="text-primary">{b.accessionNo}</span></span>
+                                    <span>{b.author}</span>
+                                  </div>
+                                </div>
+                                <button 
+                                  onClick={() => handleRemoveBookFromRack(b.id)}
+                                  className="px-3 py-1.5 text-xs font-bold text-amber-600 bg-amber-500/10 hover:bg-amber-500/20 rounded-xl transition-colors"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })
               )}
             </div>
           </  >
@@ -213,18 +249,18 @@ export default function RackArrangement() {
       )}
 
       {/* ─── Assign Book Modal ───────────────────────────────────── */}
-      {showAssignBook && (
+      {showAssignBookToShelf && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="glass-morphism rounded-[2rem] border border-border w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
             <div className="px-6 py-5 border-b border-border flex items-center justify-between bg-card/50">
-              <h2 className="font-display font-black text-xl tracking-tight uppercase">Assign to Rack {selectedRack?.rackNumber}</h2>
-              <button onClick={() => setShowAssignBook(false)} className="p-2 hover:bg-muted rounded-full transition-colors"><X className="w-5 h-5" /></button>
+              <h2 className="font-display font-black text-xl tracking-tight uppercase">Assign to Shelf {showAssignBookToShelf}</h2>
+              <button onClick={() => setShowAssignBookToShelf(null)} className="p-2 hover:bg-muted rounded-full transition-colors"><X className="w-5 h-5" /></button>
             </div>
             
             {/* Search Input inside Modal */}
             <AssignBookSearch 
               books={unassignedAvailableBooks} 
-              onAssign={(ids) => { handleAssignBooks(ids); setShowAssignBook(false); }} 
+              onAssign={(ids) => { handleAssignBooks(ids, showAssignBookToShelf); setShowAssignBookToShelf(null); }} 
             />
 
           </div>
